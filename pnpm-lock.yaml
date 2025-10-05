@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      dayjs:
+        specifier: ^1.11.18
+        version: 1.11.18
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: ^3.0.9
@@ -20,6 +24,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.1.13
         version: 4.1.14(vite@7.1.9(jiti@2.6.1)(lightningcss@1.30.1))
+      csv-parse:
+        specifier: ^6.1.0
+        version: 6.1.0
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
@@ -501,6 +508,12 @@ packages:
   cookie@0.6.0:
     resolution: {integrity: sha512-U71cyTamuh1CRNCfpGY6to28lxvNwPG4Guz/EVjgf3Jmzv0vlDp1atT9eS5dDjMYHucpHbWns6Lwf3BKz6svdw==}
     engines: {node: '>= 0.6'}
+
+  csv-parse@6.1.0:
+    resolution: {integrity: sha512-CEE+jwpgLn+MmtCpVcPtiCZpVtB6Z2OKPTr34pycYYoL7sxdOkXDdQ4lRiw6ioC0q6BLqhc6cKweCVvral8yhw==}
+
+  dayjs@1.11.18:
+    resolution: {integrity: sha512-zFBQ7WFRvVRhKcWoUh+ZA1g2HVgUbsZm9sbddh8EC5iv93sui8DVVz1Npvz+r6meo9VKfa8NyLWBsQK1VvIKPA==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1168,6 +1181,10 @@ snapshots:
   clsx@2.1.1: {}
 
   cookie@0.6.0: {}
+
+  csv-parse@6.1.0: {}
+
+  dayjs@1.11.18: {}
 
   debug@4.4.3:
     dependencies:

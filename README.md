@@ -9,6 +9,7 @@ Everything you need to build a Svelte project, powered by [`sv`](https://github.
 ## Development
 
 Install dependencies
+
 ```sh
 pnpm i
 # or
@@ -33,4 +34,3 @@ npm run build
 ```
 
 You can preview the production build with `npm run preview`.
-

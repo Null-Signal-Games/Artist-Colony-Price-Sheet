@@ -10,24 +10,32 @@ dayjs.extend(localizedFormat);
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+type CSVRow = { [key: string]: string; };
+
+const artistColumn = 0;
+
+export const prerender = true;
 export async function load() {
-	const csvFilePath = path.resolve(
-		process.cwd(),
-		'src',
-		'data',
-		'Worlds 2025 Artist Colony Master Inventory - Formatted Inventory - FOR PRINT.csv'
-	);
-	const fileContent = readFileSync(csvFilePath, 'utf-8');
+    const csvFilePath = path.resolve(
+        process.cwd(),
+        'src',
+        'data',
+        'Worlds 2025 Artist Colony Master Inventory - Formatted Inventory - FOR PRINT.csv'
+    );
+    
+    const fileContent = readFileSync(csvFilePath, 'utf-8');
+    
+    const csvData: CSVRow[] = parse(fileContent, {
+        columns: true,
+        skip_empty_lines: true
+    });
 
-	const csvData = parse(fileContent, {
-		columns: true,
-		skip_empty_lines: true
-	});
+    const artistNames = new Set(csvData.slice(1).map(row => row[Object.keys(row)[artistColumn]]));
+    const lastUpdated = dayjs(statSync(csvFilePath).mtimeMs).tz('Europe/London').format('LLLL');
 
-	const lastUpdated = dayjs(statSync(csvFilePath).mtimeMs).tz('Europe/London').format('LLLL');
-
-	return {
-		csvData,
-		lastUpdated
-	};
+    return {
+        csvData,
+        lastUpdated,
+        artistNames,
+    };
 }

@@ -1,4 +1,5 @@
 Bugs:
+- USD() / Euro () / GBP () missing symbols
 - Items aren't alphabetized
 - Extra Euro Column desktop
-- Clear All button
+- Clear All button x

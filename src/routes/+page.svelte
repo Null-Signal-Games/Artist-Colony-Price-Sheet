@@ -16,9 +16,10 @@
   $: filteredData = data.csvData.slice(1)
     .filter(row =>
       (
-        !searchTerm || 
+        (!searchTerm || 
         (row[productTitleKey] && row[productTitleKey].toLowerCase().includes(searchTerm.toLowerCase())) || 
-        (row[productCodeKey] && row[productCodeKey].toLowerCase().includes(searchTerm.toLowerCase()))
+        (row[productCodeKey] && row[productCodeKey].toLowerCase().includes(searchTerm.toLowerCase())))
+        && (!selectedArtist || row[artistColumnKey] === selectedArtist) // Filter by selected artist
       )
     )
     .sort((a, b) => {

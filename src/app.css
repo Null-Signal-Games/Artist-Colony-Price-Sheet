@@ -1,1 +1,229 @@
 @import 'tailwindcss';
+
+/* Basic page styles */
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* Mobile-first responsive padding */
+.page-container {
+  /* padding: 5px; */
+}
+
+/* Desktop padding */
+@media (min-width: 768px) {
+  .page-container {
+    padding: 15px;
+  }
+}
+
+/* Filter fields responsive layout */
+#filter-fields {
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 0;
+}
+
+#filter-fields select {
+  width: 100%;
+  margin: 0;
+  background-color: white;
+  border: none;
+  padding: 8px 17px 8px 12px;
+}
+
+#filter-fields .search-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+#filter-fields input {
+  flex: 1;
+  margin: 0;
+  background-color: white;
+  border: none;
+  padding: 8px 12px;
+}
+
+#filter-fields input[type="text"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 8px center;
+  background-size: 16px 16px;
+  padding-left: 32px;
+}
+
+/* Desktop: side by side */
+@media (min-width: 768px) {
+  #filter-fields {
+    flex-direction: row;
+    gap: 16px;
+  }
+  
+  #filter-fields select {
+    width: auto;
+    flex: 1;
+  }
+  
+  #filter-fields .search-row {
+    flex: 1;
+  }
+}
+
+/* Fixed container styles */
+.fixed-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background-color: #111111;
+  /* border-bottom: 1px solid #e5e5e5; */
+}
+
+/* Main heading styles */
+h1 {
+  font-family: 'Montserrat', sans-serif;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 0;
+  padding: 3px 8px;
+  letter-spacing: 0.5px;
+  background-color: #ec008c;
+  color: white;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+}
+
+/* Mobile table styles */
+@media (max-width: 767px) {
+  table {
+    display: none;
+  }
+  
+  .mobile-items {
+    display: block;
+    margin-top: 127px;
+  }
+  
+  .mobile-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 8px 8px;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  
+  .mobile-item:last-child {
+    border-bottom: none;
+  }
+  
+  .mobile-left {
+    flex-shrink: 0;
+    width: 70px;
+  }
+  
+  .mobile-center {
+    flex: 1;
+    padding-right: 20px;
+  }
+  
+  .mobile-right {
+    flex-shrink: 0;
+    text-align: right;
+  }
+  
+  .mobile-artist {
+    font-size: 13px;
+    color: #666;
+  }
+  
+  .mobile-item-name {
+    font-weight: bold;
+    line-height: 1.2;
+    margin-bottom: 2px;
+  }
+  
+  .mobile-product-code {
+    font-weight: bold;
+    line-height: 1.2;
+    /* margin-top:19px; */
+  }
+  
+  .mobile-item-type {
+    font-size: 13px;
+    color: #666;
+  }
+  
+  .mobile-price-gbp {
+    font-size: 16px;
+    font-weight: bold;
+    /* margin-bottom: 2px; */
+  }
+  
+  .mobile-price-usd {
+    font-size: 13px;
+    color: #666;
+    /* margin-bottom: 2px; */
+  }
+  
+  .mobile-price-euro {
+    font-size: 13px;
+    color: #666;
+    /* margin-bottom: 2px; */
+  }
+}
+
+/* Last Updated text */
+.last-updated-container {
+  margin: 0;
+  font-size: 9px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background-color: #111111;
+  padding: 3px;
+  text-align: center;
+  color: #888;
+}
+
+/* Clear button styles */
+.clear-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  background-color: #ec008c;
+  color: white;
+  font-family: 'Montserrat', sans-serif;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  font-weight: 400;
+  transition: background-color 0.2s ease;
+}
+
+.clear-button:hover {
+  background-color: #d1007a;
+}
+
+.clear-button:active {
+  background-color: #b8006b;
+}
+
+/* Desktop table styles */
+@media (min-width: 768px) {
+  .mobile-items {
+    display: none;
+  }
+}

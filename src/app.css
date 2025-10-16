@@ -14,7 +14,7 @@ body {
 /* Desktop padding */
 @media (min-width: 768px) {
   .page-container {
-    padding: 8px;
+    /* padding: 8px; */
   }
 }
 
@@ -108,7 +108,7 @@ h1 {
   
   .mobile-items {
     display: block;
-    margin-top: 127px;
+    margin-top: 119px;
   }
   
   .mobile-item {
@@ -117,6 +117,14 @@ h1 {
     align-items: flex-start;
     padding: 8px 8px;
     border-bottom: 1px solid #e5e5e5;
+  }
+  
+  .mobile-item:nth-child(even) {
+    background-color: #F0F0F0;
+  }
+  
+  .mobile-item:nth-child(odd) {
+    background-color: white;
   }
   
   .mobile-item:last-child {
@@ -229,7 +237,49 @@ h1 {
   }
   
   table {
-    margin-top: 78px;
+    margin-top: 71px;
+  }
+  
+  table tbody tr:nth-child(even) {
+    background-color: #F0F0F0;
+  }
+  
+  table tbody tr:nth-child(odd) {
+    background-color: white;
+  }
+  
+  table {
+    border: none;
+    margin-bottom: 20px
+  }
+  
+  table th {
+    background-color: #E0E0E0;
+    font-size: 12px;
+    padding: 6px 8px;
+    line-height: 1.2;
+    border: 1px solid #e5e5e5;
+    text-align: left;
+  }
+  
+  table td {
+    padding: 6px 8px;
+    line-height: 1.2;
+    border: 1px solid #e5e5e5;
+  }
+  
+  .small-text {
+    font-size: 0.8em;
+  }
+  
+  table td:first-child {
+    width: 120px;
+    max-width: 120px;
+  }
+  
+  table td:nth-child(2) {
+    width: 140px;
+    min-width: 140px;
   }
 }
 

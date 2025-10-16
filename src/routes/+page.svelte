@@ -12,10 +12,23 @@
   const artistColumnKey = headers[0];
   const productColumnKey = headers[2];
 
-  $: filteredData = data.csvData.slice(1).filter(row =>
-    (!selectedArtist || row[artistColumnKey] === selectedArtist) &&
-    (!searchTerm || row[productColumnKey].toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  $: filteredData = data.csvData.slice(1)
+    .filter(row =>
+      (!selectedArtist || row[artistColumnKey] === selectedArtist) &&
+      (!searchTerm || row[productColumnKey].toLowerCase().includes(searchTerm.toLowerCase()))
+    )
+    .sort((a, b) => {
+      // First sort by artist name
+      const artistA = a[artistColumnKey].toLowerCase();
+      const artistB = b[artistColumnKey].toLowerCase();
+      if (artistA !== artistB) {
+        return artistA.localeCompare(artistB);
+      }
+      // If artist names are the same, sort by product code
+      const productA = a[headers[1]].toLowerCase();
+      const productB = b[headers[1]].toLowerCase();
+      return productA.localeCompare(productB);
+    });
 
   function clearAll() {
     selectedArtist = '';
@@ -60,21 +73,24 @@
         <tr class="bg-gray-200">
           <th class="border border-gray-300 px-4 py-2">{headers[0]}</th>
           <th class="border border-gray-300 px-4 py-2">{headers[1]}</th>
-          <th class="border border-gray-300 px-4 py-2">{headers[2]}</th>
-          <th class="border border-gray-300 px-4 py-2">{headers[3]}</th>
-          <th class="border border-gray-300 px-4 py-2">{headers[5]}</th>
-          <th class="border border-gray-300 px-4 py-2">{headers[6]}</th>
-          <th class="border border-gray-300 px-4 py-2">{headers[7]}</th>
+          <th class="border border-gray-300 px-4 py-2">Product</th>
+          <th class="border border-gray-300 px-4 py-2">GBP (£)</th>
+          <th class="border border-gray-300 px-4 py-2">USD ($)</th>
+          <th class="border border-gray-300 px-4 py-2">Euro (€)</th>
         </tr>
       </thead>
       <tbody>
         {#each filteredData as row}
           <tr>
-            <td class="border border-gray-300 px-4 py-2">{row[headers[0]]}</td>
-            <td class="border border-gray-300 px-4 py-2">{row[headers[1]]}</td>
-            <td class="border border-gray-300 px-4 py-2">{row[headers[2]]}</td>
-            <td class="border border-gray-300 px-4 py-2">{row[headers[3]]}</td>
-            <td class="border border-gray-300 px-4 py-2">{row[headers[5]]}</td>
+            <td class="border border-gray-300 px-4 py-2">
+              <span class:small-text={row[headers[0]].length > 15}>{row[headers[0]]}</span>
+            </td>
+            <td class="border border-gray-300 px-4 py-2 font-bold">{row[headers[1]]}</td>
+            <td class="border border-gray-300 px-4 py-2">
+              <div class="font-bold">{row[headers[2]]}</div>
+              <div class="text-sm text-gray-600">{row[headers[3]]}</div>
+            </td>
+            <td class="border border-gray-300 px-4 py-2 font-bold">{row[headers[5]]}</td>
             <td class="border border-gray-300 px-4 py-2">{row[headers[6]]}</td>
             <td class="border border-gray-300 px-4 py-2">{row[headers[7]]}</td>
           </tr>

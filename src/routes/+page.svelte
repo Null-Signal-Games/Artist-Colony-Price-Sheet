@@ -10,12 +10,16 @@
 
   const headers = Object.keys(data.csvData[0]);
   const artistColumnKey = headers[0];
-  const productColumnKey = headers[2];
+  const productCodeKey = headers[1];
+  const productTitleKey = headers[2];
 
   $: filteredData = data.csvData.slice(1)
     .filter(row =>
-      (!selectedArtist || row[artistColumnKey] === selectedArtist) &&
-      (!searchTerm || row[productColumnKey].toLowerCase().includes(searchTerm.toLowerCase()))
+      (
+        !searchTerm || 
+        (row[productTitleKey] && row[productTitleKey].toLowerCase().includes(searchTerm.toLowerCase())) || 
+        (row[productCodeKey] && row[productCodeKey].toLowerCase().includes(searchTerm.toLowerCase()))
+      )
     )
     .sort((a, b) => {
       // First sort by artist name
@@ -83,11 +87,11 @@
         {#each filteredData as row}
           <tr>
             <td class="border border-gray-300 px-4 py-2">
-              <span class:small-text={row[headers[0]].length > 15}>{row[headers[0]]}</span>
+              <span class:small-text={row[artistColumnKey].length > 15}>{row[artistColumnKey]}</span>
             </td>
-            <td class="border border-gray-300 px-4 py-2 font-bold">{row[headers[1]]}</td>
+            <td class="border border-gray-300 px-4 py-2 font-bold">{row[productCodeKey]}</td>
             <td class="border border-gray-300 px-4 py-2">
-              <div class="font-bold">{row[headers[2]]}</div>
+              <div class="font-bold">{row[productTitleKey]}</div>
               <div class="text-sm text-gray-600">{row[headers[3]]}</div>
             </td>
             <td class="border border-gray-300 px-4 py-2 font-bold">{row[headers[5]]}</td>
@@ -103,10 +107,10 @@
       {#each filteredData as row}
         <div class="mobile-item">
           <div class="mobile-left">
-            <div class="mobile-product-code">{row[headers[1]]}</div>
+            <div class="mobile-product-code">{row[productCodeKey]}</div>
           </div>
           <div class="mobile-center">
-            <div class="mobile-item-name">{row[productColumnKey]}</div>
+            <div class="mobile-item-name">{row[productTitleKey]}</div>
             <div class="mobile-item-type">{row[headers[3]]}</div>
             <div class="mobile-artist">{row[artistColumnKey]}</div>
           </div>

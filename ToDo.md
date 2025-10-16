@@ -6,4 +6,4 @@ x  Clear All button
 x only show clear all if there are values to clear
 x alternating row colors
 x reduce artist col width, and size for long names
-- fixed table header for desktop
+x fixed table header for desktop

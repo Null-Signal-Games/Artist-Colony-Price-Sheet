@@ -67,18 +67,18 @@
 
 
   {#if filteredData && filteredData.length > 0}
+    <!-- Fixed header row -->
+    <div class="fixed-header">
+      <div class="header-cell artist-col">{headers[0]}</div>
+      <div class="header-cell product-code-col">{headers[1]}</div>
+      <div class="header-cell product-col">Product</div>
+      <div class="header-cell gbp-col">GBP (£)</div>
+      <div class="header-cell usd-col">USD ($)</div>
+      <div class="header-cell euro-col">Euro (€)</div>
+    </div>
+
     <!-- Desktop table -->
     <table class="min-w-full border-collapse border border-gray-300">
-      <thead>
-        <tr class="bg-gray-200">
-          <th class="border border-gray-300 px-4 py-2">{headers[0]}</th>
-          <th class="border border-gray-300 px-4 py-2">{headers[1]}</th>
-          <th class="border border-gray-300 px-4 py-2">Product</th>
-          <th class="border border-gray-300 px-4 py-2">GBP (£)</th>
-          <th class="border border-gray-300 px-4 py-2">USD ($)</th>
-          <th class="border border-gray-300 px-4 py-2">Euro (€)</th>
-        </tr>
-      </thead>
       <tbody>
         {#each filteredData as row}
           <tr>

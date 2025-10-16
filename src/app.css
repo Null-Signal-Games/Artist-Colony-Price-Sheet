@@ -14,7 +14,7 @@ body {
 /* Desktop padding */
 @media (min-width: 768px) {
   .page-container {
-    padding: 15px;
+    padding: 8px;
   }
 }
 
@@ -22,7 +22,7 @@ body {
 #filter-fields {
   flex-direction: column;
   gap: 8px;
-  padding: 8px;
+  padding: 6px 8px 8px;
   margin-bottom: 0;
 }
 
@@ -31,7 +31,7 @@ body {
   margin: 0;
   background-color: white;
   border: none;
-  padding: 8px 17px 8px 12px;
+  padding: 10px 17px 9px 12px;
 }
 
 #filter-fields .search-row {
@@ -61,7 +61,7 @@ body {
 @media (min-width: 768px) {
   #filter-fields {
     flex-direction: row;
-    gap: 16px;
+    gap: 10px;
   }
   
   #filter-fields select {
@@ -71,6 +71,7 @@ body {
   
   #filter-fields .search-row {
     flex: 1;
+    gap: 10px;
   }
 }
 
@@ -91,10 +92,10 @@ h1 {
   text-transform: uppercase;
   text-align: center;
   margin: 0;
-  padding: 3px 8px;
+  padding: 4px 8px 0;
+  line-height: 1;
   letter-spacing: 0.5px;
-  background-color: #ec008c;
-  color: white;
+  color: #FFFFFF;
   font-size: 13px;
   letter-spacing: 1.5px;
 }
@@ -225,5 +226,43 @@ h1 {
 @media (min-width: 768px) {
   .mobile-items {
     display: none;
+  }
+  
+  table {
+    margin-top: 78px;
+  }
+}
+
+/* Desktop fixed container styles */
+@media (min-width: 1024px) {
+
+  table {
+    margin-top: 55px;
+  }
+
+  .fixed-container {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+  }
+  
+  .fixed-container h1 {
+    flex-shrink: 0;
+    margin: 0 0 0 10px;
+    padding: 0 8px;
+    height: 40px;
+    line-height: 40px;
+    background-color: #111111;
+    font-family: 'Fjalla One', sans-serif;
+    letter-spacing: 1px;
+    font-size: 22px;
+    /* color: #ec008c; */
+  }
+  
+  .fixed-container #filter-fields {
+    flex: 1;
+    margin: 0;
+    padding: 8px;
   }
 }

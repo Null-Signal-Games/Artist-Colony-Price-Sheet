@@ -1,141 +1,151 @@
 <script lang="ts">
+	import OrderItemsTable from '$lib/OrderItemsTable.svelte';
 	import { cart, cartCount, formatMoney, parseMoney, type CartItem } from '$lib/cart';
 
 	let name = '';
+	let discordHandle = '';
 	let email = '';
-	let phone = '';
-	let notes = '';
 	let submitted = false;
-	let orderId = '';
+	let timestamp = '';
 	let submittedItems: CartItem[] = [];
 
 	$: items = submitted ? submittedItems : $cart;
 	$: gbpTotal = items.reduce((total, item) => total + parseMoney(item.gbp) * item.quantity, 0);
-	$: usdTotal = items.reduce((total, item) => total + parseMoney(item.usd) * item.quantity, 0);
-	$: euroTotal = items.reduce((total, item) => total + parseMoney(item.euro) * item.quantity, 0);
+	$: currencySymbol = items[0]?.gbp.trim().match(/^[^\d.-]+/)?.[0] ?? '$';
 
-	function submitOrder() {
-		submittedItems = $cart.map((item) => ({ ...item }));
-		orderId = `AC-${Date.now().toString().slice(-6)}`;
-		submitted = true;
-		cart.clear();
+	function formatTimestamp(date: Date) {
+		return date.toLocaleString('en-GB', {
+			timeZone: 'Europe/London',
+			dateStyle: 'full',
+			timeStyle: 'short'
+		});
 	}
 
-	function startNewOrder() {
-		name = '';
-		email = '';
-		phone = '';
-		notes = '';
-		submitted = false;
-		orderId = '';
-		submittedItems = [];
+	function submitOrder(event: Event) {
+		const form = event.currentTarget as HTMLFormElement;
+		const nameInput = form.querySelector<HTMLInputElement>('input[autocomplete="name"]');
+		const emailInput = form.querySelector<HTMLInputElement>('input[type="email"]');
+
+		nameInput?.setCustomValidity(name.trim() ? '' : 'Please enter your name');
+		emailInput?.setCustomValidity(email.trim() ? '' : 'Please enter your email');
+
+		if (!form.checkValidity()) {
+			form.reportValidity();
+			return;
+		}
+
+		name = name.trim();
+		email = email.trim();
+		discordHandle = discordHandle.trim();
+		submittedItems = $cart.map((item) => ({ ...item }));
+		timestamp = formatTimestamp(new Date());
+		submitted = true;
+		cart.clear();
 	}
 </script>
 
 <div class="order-form-page">
 	<header class="order-form-header">
-		<a class="back-link" href="/">← Price Sheet</a>
-		<h1>Order Form</h1>
+		<a class="back-link" href="/">← View Items</a>
+		<h1>Artist Colony</h1>
 	</header>
 
 	<main class="order-form-main">
 		{#if submitted}
-			<section class="order-confirmation">
-				<h2>Order received</h2>
-				<p class="order-id">Order {orderId}</p>
-				<p>
-					This is not a payment. Please show this confirmation to the cashier when you collect your
-					items.
-				</p>
-				<p><strong>{name}</strong></p>
-				<p>{email}{phone ? ` · ${phone}` : ''}</p>
-				<ul class="order-items">
-					{#each items as item}
-						<li>
-							<span>{item.quantity}× {item.productCode || item.title}</span>
-							<span>{formatMoney(parseMoney(item.gbp) * item.quantity, '£')}</span>
-						</li>
-					{/each}
-				</ul>
-				<p class="order-total">
-					<strong>Total: {formatMoney(gbpTotal, '£')}</strong>
-					<span>{formatMoney(usdTotal, '$')} / {formatMoney(euroTotal, '€')}</span>
-				</p>
-				{#if notes}
-					<p class="order-notes">Notes: {notes}</p>
-				{/if}
-				<button type="button" class="submit-order-button" on:click={startNewOrder}>
-					Start a new order
-				</button>
-			</section>
+			<div class="order-confirmation-wrap">
+				<section class="order-confirmation">
+					<h2 class="order-page-title">Order Submitted!</h2>
+					<p class="order-timestamp">{timestamp}</p>
+					<dl class="order-fields">
+						<div>
+							<dt>Name</dt>
+							<dd>{name}</dd>
+						</div>
+						<div class="form-row">
+							<div>
+								<dt>Discord Handle</dt>
+								<dd>{discordHandle || 'N/A'}</dd>
+							</div>
+							<div>
+								<dt>Email</dt>
+								<dd>{email}</dd>
+							</div>
+						</div>
+					</dl>
+
+					<OrderItemsTable items={items} />
+					<div class="order-total">
+						<strong>*Subtotal: {formatMoney(gbpTotal, currencySymbol)}</strong>
+					</div>
+
+					<p class="tax-note">
+						*Subtotal: Tax will added to your total in the final invoice that will be sent to you.
+					</p>
+					<p class="payment-note">
+						Your order will be processed in the order it is received. You will be notified via Discord
+						&amp; Email when an invoice has been created for you. Pay ASAP. Unpaid invoices expire
+						after 2 hours and items will be returned to inventory. Orders must be paid in CAD.
+					</p>
+				</section>
+				<a class="submit-order-button" href="/">View Price Sheet</a>
+			</div>
 		{:else if $cartCount === 0}
 			<section class="empty-cart">
+				<h2 class="order-page-title">Order Form</h2>
 				<p>Your cart is empty.</p>
-				<a class="submit-order-button" href="/">Browse the price sheet</a>
+				<a class="submit-order-button" href="/">View items</a>
 			</section>
 		{:else}
-			<section class="order-items-section">
-				<h2>Your items</h2>
-				<ul class="order-items editable">
-					{#each items as item}
-						<li>
-							<div class="item-details">
-								<div class="item-title">{item.title}</div>
-								<div class="item-meta">
-									{item.productCode}{item.productCode && item.artist ? ' · ' : ''}{item.artist}
-								</div>
-								<div class="item-price">{item.gbp}</div>
-							</div>
-							<div class="item-actions">
-								<div class="qty-controls">
-									<button
-										type="button"
-										aria-label="Decrease quantity"
-										on:click={() => cart.setQuantity(item.id, item.quantity - 1)}
-									>
-										−
-									</button>
-									<span>{item.quantity}</span>
-									<button
-										type="button"
-										aria-label="Increase quantity"
-										on:click={() => cart.setQuantity(item.id, item.quantity + 1)}
-									>
-										+
-									</button>
-								</div>
-								<button type="button" class="remove-item" on:click={() => cart.remove(item.id)}>
-									Remove
-								</button>
-							</div>
-						</li>
-					{/each}
-				</ul>
-				<div class="order-total">
-					<strong>Total: {formatMoney(gbpTotal, '£')}</strong>
-					<span>{formatMoney(usdTotal, '$')} / {formatMoney(euroTotal, '€')}</span>
-				</div>
-			</section>
-
 			<form class="order-details-form" on:submit|preventDefault={submitOrder}>
-				<h2>Your details</h2>
+				<h2 class="order-page-title">Order Form</h2>
 				<label>
-					Name
-					<input type="text" bind:value={name} required autocomplete="name" />
+					Name*
+					<input
+						type="text"
+						bind:value={name}
+						required
+						autocomplete="name"
+						on:input={(event) => event.currentTarget.setCustomValidity('')}
+					/>
 				</label>
-				<label>
-					Email
-					<input type="email" bind:value={email} required autocomplete="email" />
-				</label>
-				<label>
-					Phone <span class="optional">(optional)</span>
-					<input type="tel" bind:value={phone} autocomplete="tel" />
-				</label>
-				<label>
-					Notes <span class="optional">(optional)</span>
-					<textarea bind:value={notes} rows="3" placeholder="Pickup notes, sizes, or special requests"></textarea>
-				</label>
-				<p class="payment-note">No payment is taken here. Submit this form, then check out with the cashier.</p>
+				<div class="form-row">
+					<label>
+						Discord Handle
+						<input
+							type="text"
+							bind:value={discordHandle}
+							autocomplete="username"
+							placeholder="@username"
+						/>
+					</label>
+					<label>
+						Email*
+						<input
+							type="email"
+							bind:value={email}
+							required
+							autocomplete="email"
+							on:input={(event) => event.currentTarget.setCustomValidity('')}
+						/>
+					</label>
+				</div>
+
+				<section class="order-items-section">
+					<OrderItemsTable items={items} editable />
+					<div class="order-total">
+						<strong>*Subtotal: {formatMoney(gbpTotal, currencySymbol)}</strong>
+					</div>
+				</section>
+
+				<p class="tax-note">
+					*Subtotal: Tax will added to your total in the final invoice that will be sent to you.
+				</p>
+				<p class="payment-note">
+					Once you submit your order, it will be processed in the order it is received. You will be
+					notified via Discord &amp; Email when an invoice has been created for you. Pay ASAP.
+					Unpaid invoices expire after 2 hours and items will be returned to inventory. Orders must
+					be paid in CAD.
+				</p>
 				<button type="submit" class="submit-order-button">Submit order</button>
 			</form>
 		{/if}

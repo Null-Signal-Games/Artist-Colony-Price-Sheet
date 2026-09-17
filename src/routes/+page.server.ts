@@ -30,6 +30,21 @@ export async function load() {
         skip_empty_lines: true
     });
 
+    const uniqueKey = Object.keys(csvData[0] ?? {}).find(
+        (key) => key.toLowerCase().replace(/[_\s]/g, '') === 'isunique'
+    );
+
+    if (!uniqueKey) {
+        csvData.forEach((row, index) => {
+            const code = row['Product Code'] || row['Item Name'] || String(index);
+            let hash = 0;
+            for (let i = 0; i < code.length; i++) {
+                hash = (hash * 33 + code.charCodeAt(i)) >>> 0;
+            }
+            row.is_unique = hash % 4 === 0 ? 'TRUE' : 'FALSE';
+        });
+    }
+
     const artistNames = new Set(csvData.slice(1).map(row => row[Object.keys(row)[artistColumn]]));
     const lastUpdated = dayjs(statSync(csvFilePath).mtimeMs).tz('Europe/London').format('LLLL');
 

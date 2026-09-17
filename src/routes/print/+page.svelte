@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
+	import PrintPageFooter from '$lib/PrintPageFooter.svelte';
+	import PrintPageHeader from '$lib/PrintPageHeader.svelte';
 	import { artistDetails } from '$lib/artistDetails';
 
 	export let data: {
@@ -54,8 +56,7 @@
 	type PageBlock =
 		| { type: 'rule' }
 		| { type: 'artist'; groupIndex: number }
-		| { type: 'item'; groupIndex: number; rowIndex: number }
-		| { type: 'footer' };
+		| { type: 'item'; groupIndex: number; rowIndex: number };
 
 	type PrintPage = { blocks: PageBlock[] };
 
@@ -73,10 +74,19 @@
 		const available = body instanceof HTMLElement ? Math.max(0, body.clientHeight - 12) : 0;
 		if (available <= 0) return;
 
+		const KEEP_TOGETHER_LIMIT = 20;
 		const ruleHeight = heightOf(measureRoot.querySelector('[data-print-block="rule"]'));
-		const footerHeight = heightOf(measureRoot.querySelector('[data-print-block="footer"]'));
 		const artistHeights = artistGroups.map((_, g) =>
 			heightOf(measureRoot.querySelector(`[data-print-block="artist"][data-group-index="${g}"]`))
+		);
+		const itemHeights = artistGroups.map((group, g) =>
+			group.rows.map((_, r) =>
+				heightOf(
+					measureRoot.querySelector(
+						`[data-print-block="item"][data-group-index="${g}"][data-row-index="${r}"]`
+					)
+				)
+			)
 		);
 
 		const nextPages: PrintPage[] = [];
@@ -117,16 +127,38 @@
 			artistOnPage = groupIndex;
 		};
 
+		const groupContentHeight = (groupIndex: number) =>
+			(artistHeights[groupIndex] ?? 0) +
+			itemHeights[groupIndex].reduce((total, height) => total + height, 0);
+
 		for (let g = 0; g < artistGroups.length; g++) {
 			const group = artistGroups[g];
+			const keepTogether = group.rows.length < KEEP_TOGETHER_LIMIT;
+			const contentHeight = groupContentHeight(g);
+			const leadHeight = current.length > 0 ? ruleHeight : 0;
+			const totalNeeded = leadHeight + contentHeight;
+
+			if (keepTogether && contentHeight <= available) {
+				if (current.length > 0 && used + totalNeeded > available) {
+					pushPage();
+				}
+
+				if (current.length > 0) {
+					add({ type: 'rule' }, ruleHeight);
+				}
+				add({ type: 'artist', groupIndex: g }, artistHeights[g] ?? 0);
+				artistOnPage = g;
+
+				for (let r = 0; r < group.rows.length; r++) {
+					add({ type: 'item', groupIndex: g, rowIndex: r }, itemHeights[g][r]);
+				}
+				continue;
+			}
+
 			ensureArtist(g);
 
 			for (let r = 0; r < group.rows.length; r++) {
-				const itemHeight = heightOf(
-					measureRoot.querySelector(
-						`[data-print-block="item"][data-group-index="${g}"][data-row-index="${r}"]`
-					)
-				);
+				const itemHeight = itemHeights[g][r];
 
 				if (itemHeight > 0 && used + itemHeight > available && current.length) {
 					pushPage();
@@ -137,12 +169,7 @@
 			}
 		}
 
-		if (footerHeight > 0 && used + footerHeight > available && current.length) {
-			pushPage();
-		}
-		add({ type: 'footer' }, footerHeight);
 		pushPage();
-
 		pages = nextPages;
 	}
 
@@ -172,10 +199,7 @@
 
 	<div class="print-measure" bind:this={measureRoot} aria-hidden="true">
 		<section class="print-page">
-			<header class="print-page-header">
-				<h1>Artist Colony 2026 Price List</h1>
-				<p class="print-page-number">Page 1</p>
-			</header>
+			<PrintPageHeader />
 			<div class="print-page-body">
 				{#if artistGroups.length > 0}
 					<table class="print-catalogue">
@@ -226,11 +250,9 @@
 							</tbody>
 						{/each}
 					</table>
-					<p class="print-merch-footer" data-print-block="footer">
-						*Buy at Merch Table: Unique Items must be selected and paid for in-person at the Merch Table.
-					</p>
 				{/if}
 			</div>
+			<PrintPageFooter pageNumber={1} />
 		</section>
 	</div>
 
@@ -241,10 +263,7 @@
 					<div class="print-break-marker">Page break · Page {i + 1}</div>
 				{/if}
 				<section class="print-page">
-					<header class="print-page-header">
-						<h1>Artist Colony 2026 Price List</h1>
-						<p class="print-page-number">Page {i + 1}</p>
-					</header>
+					<PrintPageHeader />
 					<div class="print-page-body">
 						<table class="print-catalogue">
 							<colgroup>
@@ -297,26 +316,16 @@
 											<td class="print-cad-cell">{row[headers[5]]}</td>
 										</tr>
 									</tbody>
-								{:else if block.type === 'footer'}
-									<!-- footer is outside the table -->
 								{/if}
 							{/each}
 						</table>
-						{#if page.blocks.some((block) => block.type === 'footer')}
-							<p class="print-merch-footer">
-								*Buy at Merch Table: Unique Items must be selected and paid for in-person at the Merch
-								Table.
-							</p>
-						{/if}
 					</div>
+					<PrintPageFooter pageNumber={i + 1} />
 				</section>
 			{/each}
 		{:else if artistGroups.length > 0}
 			<section class="print-page print-page-fallback">
-				<header class="print-page-header">
-					<h1>Artist Colony 2026 Price List</h1>
-					<p class="print-page-number">Page 1</p>
-				</header>
+				<PrintPageHeader />
 				<div class="print-page-body">
 					<table class="print-catalogue">
 						<colgroup>
@@ -364,10 +373,8 @@
 							</tbody>
 						{/each}
 					</table>
-					<p class="print-merch-footer">
-						*Buy at Merch Table: Unique Items must be selected and paid for in-person at the Merch Table.
-					</p>
 				</div>
+				<PrintPageFooter pageNumber={1} />
 			</section>
 		{:else}
 			<p>No CSV data found.</p>

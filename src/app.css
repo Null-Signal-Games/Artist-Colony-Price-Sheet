@@ -1537,7 +1537,7 @@ h1 {
 
 .print-page-header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-shrink: 0;
@@ -1564,21 +1564,83 @@ h1 {
   background: transparent;
 }
 
-.print-page-number {
-  margin: 0;
+.print-qr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
+  max-width: 180px;
+}
+
+.print-qr-label {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
   font-family: 'Montserrat', sans-serif;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.2px;
+  text-align: right;
   text-transform: uppercase;
   color: #000000;
-  white-space: nowrap;
+}
+
+.print-qr-placeholder {
+  box-sizing: border-box;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffe600;
+  border: 1px solid #000000;
+  color: #000000;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
 }
 
 .print-page-body {
   flex: 1;
   min-height: 0;
+}
+
+.print-page-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid #cccccc;
+}
+
+.print-page-footer-note {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #000000;
+}
+
+.print-page-number {
+  margin: 0;
+  flex-shrink: 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #000000;
+  white-space: nowrap;
 }
 
 .print-preview-page table.print-catalogue {
@@ -1714,13 +1776,6 @@ h1 {
 .print-catalogue .print-cad-cell {
   font-weight: 400;
   white-space: nowrap;
-}
-
-.print-merch-footer {
-  margin: 16px 0 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #000000;
 }
 
 @media print {

@@ -1400,3 +1400,380 @@ h1 {
     padding: 28px 24px 48px;
   }
 }
+
+/* Print catalogue preview */
+.print-catalogue-link {
+  flex-shrink: 0;
+  color: #ffffff;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.print-catalogue-link:hover {
+  color: #ec008c;
+}
+
+.print-preview-page {
+  min-height: 100vh;
+  background: #d8d8d8;
+  color: #000000;
+}
+
+.print-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+  background-color: #111111;
+  color: #ffffff;
+}
+
+.print-back-link {
+  color: #ffffff;
+  text-decoration: none;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.print-back-link:hover {
+  color: #ec008c;
+}
+
+.print-toolbar-hint {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #c8c8c8;
+}
+
+.print-pdf-button {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 0;
+  background-color: #ec008c;
+  color: #ffffff;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.print-pdf-button:hover {
+  background-color: #d1007a;
+}
+
+.print-sheet-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  padding: 24px 16px 48px;
+}
+
+.print-measure {
+  position: absolute;
+  left: -12000px;
+  top: 0;
+  width: 210mm;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.print-break-marker {
+  width: 210mm;
+  margin: 10px 0;
+  padding: 8px 0;
+  border-top: 2px dashed #7a7a7a;
+  border-bottom: 2px dashed #7a7a7a;
+  color: #555555;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.print-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 210mm;
+  height: 297mm;
+  margin: 0 auto;
+  padding: 12mm 10mm 12mm;
+  overflow: hidden;
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+
+.print-page-fallback {
+  height: auto;
+  min-height: 297mm;
+  overflow: visible;
+}
+
+.print-page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 0 0 8px;
+  margin: 0 0 8px;
+  border-bottom: 2px solid #000000;
+}
+
+.print-page-header h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  height: auto;
+  line-height: 1.15;
+  overflow: visible;
+  font-family: 'Fjalla One', sans-serif;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-align: left;
+  color: #000000;
+  background: transparent;
+}
+
+.print-page-number {
+  margin: 0;
+  flex-shrink: 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #000000;
+  white-space: nowrap;
+}
+
+.print-page-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.print-preview-page table.print-catalogue {
+  display: table;
+  width: 100%;
+  margin: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border-spacing: 0;
+  color: #000000;
+}
+
+.print-catalogue col.print-col-code {
+  width: 13%;
+}
+
+.print-catalogue col.print-col-product {
+  width: auto;
+}
+
+.print-catalogue col.print-col-type {
+  width: 22%;
+}
+
+.print-catalogue col.print-col-cad {
+  width: 11%;
+}
+
+.print-catalogue th,
+.print-catalogue td {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  color: #000000;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #cccccc;
+  border-bottom: 1px solid #cccccc;
+  padding: 4px 5px;
+  line-height: 1.25;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.print-catalogue td:first-child,
+.print-catalogue th:first-child {
+  width: auto;
+  max-width: none;
+  border-left: 1px solid #cccccc;
+}
+
+.print-catalogue .print-col-headers th {
+  font-size: 12px;
+  font-weight: 400;
+  color: #000000;
+  background: #eeeeee;
+  border-top: 1px solid #cccccc;
+  border-bottom: 1px solid #cccccc;
+  padding: 4px 5px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.print-catalogue tr.print-group-rule td,
+.print-catalogue tr.print-artist-heading-row td {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.print-catalogue tr.print-group-rule td {
+  padding: 10px 0 6px;
+}
+
+.print-artist-rule {
+  height: 10px;
+  background-color: #ec008c;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.print-catalogue .artist-heading {
+  padding: 8px 0 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.print-catalogue .artist-heading h2,
+.print-catalogue .artist-heading h3,
+.print-catalogue .artist-heading a,
+.print-catalogue .artist-heading-sep {
+  color: #000000;
+}
+
+.print-catalogue .artist-heading h2 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.print-catalogue .artist-heading h3 {
+  font-size: 13px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.print-catalogue .print-code-cell {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.print-catalogue .print-merch-note {
+  display: block;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #000000;
+}
+
+.print-catalogue .print-product-name {
+  font-weight: 400;
+  color: #000000;
+}
+
+.print-catalogue .print-type-cell {
+  font-size: 12px;
+  color: #000000;
+}
+
+.print-catalogue .print-cad-cell {
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.print-merch-footer {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #000000;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .print-toolbar,
+  .print-measure,
+  .print-break-marker {
+    display: none !important;
+  }
+
+  .print-preview-page {
+    background: #ffffff;
+    min-height: 0;
+  }
+
+  .print-sheet-wrap {
+    display: block;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .print-page {
+    width: auto;
+    height: auto;
+    min-height: 297mm;
+    margin: 0;
+    padding: 12mm 10mm;
+    overflow: visible;
+    box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .print-catalogue tr {
+    break-inside: avoid;
+  }
+
+  .print-artist-rule {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

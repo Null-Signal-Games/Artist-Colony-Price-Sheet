@@ -6,8 +6,8 @@ build
 **/.md
 **/.example
 **/.*
-data
 server/data
+data/
 db
 static
 Dockerfile

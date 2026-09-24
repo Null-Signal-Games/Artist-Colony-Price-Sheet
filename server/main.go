@@ -1,12 +1,13 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -43,8 +44,9 @@ type computedItem struct {
 }
 
 type appServer struct {
-	db            *store
-	allowedOrigin string
+	db              *store
+	allowedOrigin   string
+	inventoryPrices map[string]int
 }
 
 func envOr(key, fallback string) string {
@@ -52,6 +54,73 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+var priceRe = regexp.MustCompile(`^\d+\.\d{2}$`)
+
+func priceCents(value string) (int, bool) {
+	if !priceRe.MatchString(value) {
+		return 0, false
+	}
+	whole, frac, _ := strings.Cut(value, ".")
+	dollars, _ := strconv.Atoi(whole)
+	cents, _ := strconv.Atoi(frac)
+	return dollars*100 + cents, true
+}
+
+// loadInventoryPrices loads the authoritative data source,
+// ignore known unit prices from client unless we don't have the product code
+//   could be loaded in frontend before backend catches up
+func loadInventoryPrices(path string) (map[string]int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open inventory CSV: %w", err)
+	}
+	defer f.Close()
+
+	reader := csv.NewReader(f)
+	reader.TrimLeadingSpace = true
+	reader.LazyQuotes = true
+	reader.FieldsPerRecord = -1 // rows have optional trailing columns
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("read inventory CSV: %w", err)
+	}
+	if len(records) < 2 {
+		return nil, fmt.Errorf("inventory CSV has no data rows")
+	}
+
+	codeIdx, priceIdx := -1, -1
+	for i, col := range records[0] {
+		trimmed := strings.TrimSpace(col)
+		if trimmed == "Product Code" {
+			codeIdx = i
+		}
+		if strings.HasPrefix(trimmed, "Price per unit") {
+			priceIdx = i
+		}
+	}
+	if codeIdx < 0 || priceIdx < 0 {
+		return nil, fmt.Errorf("inventory CSV missing Product Code / Price per unit columns")
+	}
+
+	prices := make(map[string]int, len(records)-1)
+	for _, row := range records[1:] {
+		if codeIdx >= len(row) || priceIdx >= len(row) {
+			continue
+		}
+		code := strings.TrimSpace(row[codeIdx])
+		if code == "" {
+			continue
+		}
+		cents, ok := priceCents(row[priceIdx])
+		if !ok {
+			return nil, fmt.Errorf("product %q has malformed price %q (expect decimal like 8.00)", code, row[priceIdx])
+		}
+		prices[code] = cents
+	}
+	return prices, nil
 }
 
 func (s *appServer) corsMiddleware(next http.Handler) http.Handler {
@@ -139,6 +208,17 @@ func (s *appServer) handleOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, item := range sub.Items {
+		if _, ok := priceCents(item.UnitPrice); !ok {
+			log.Printf("order %q: rejecting unit price %q", sub.OrderID, item.UnitPrice)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"result": "error",
+				"error":  "Unit prices must be plain decimal strings like 8.00",
+			})
+			return
+		}
+	}
+
 	computed := make([]computedItem, 0, len(sub.Items))
 	var subtotalCents int
 	for _, item := range sub.Items {
@@ -147,13 +227,17 @@ func (s *appServer) handleOrder(w http.ResponseWriter, r *http.Request) {
 			quantity = 1
 		}
 		
-		f, _ := strconv.ParseFloat(strings.TrimSpace(item.UnitPrice), 64)
-		unitPriceCents := int(math.Round(f * 100))
+		code := strings.TrimSpace(item.ProductCode)
+		unitPriceCents, known := s.inventoryPrices[code]
+		if !known {
+			log.Printf("order %q: product %q not in inventory, using client price", sub.OrderID, code)
+			unitPriceCents, _ = priceCents(item.UnitPrice)
+		}
 		
 		lineSubtotalCents := unitPriceCents * quantity
 		subtotalCents += lineSubtotalCents
 		computed = append(computed, computedItem{
-			ProductCode:       strings.TrimSpace(item.ProductCode),
+			ProductCode:       code,
 			Title:             strings.TrimSpace(item.Title),
 			Artist:            strings.TrimSpace(item.Artist),
 			UnitPriceCents:    unitPriceCents,
@@ -188,7 +272,18 @@ func main() {
 	}
 	defer database.Close()
 
-	s := &appServer{db: &store{db: database}, allowedOrigin: allowedOrigin}
+	inventoryPath := envOr("INVENTORY_CSV", "/usr/local/share/artist-colony/w26-inventory.csv")
+	prices, err := loadInventoryPrices(inventoryPath)
+	if err != nil {
+		log.Fatalf("load inventory: %v", err)
+	}
+	log.Printf("loaded %d inventory prices from %s", len(prices), inventoryPath)
+
+	s := &appServer{
+		db:              &store{db: database},
+		allowedOrigin:   allowedOrigin,
+		inventoryPrices: prices,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /order", s.handleOrder)

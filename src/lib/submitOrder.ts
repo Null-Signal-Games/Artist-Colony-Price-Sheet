@@ -21,6 +21,10 @@ function endpointBase() {
 	return (configured || DEFAULT_ORDER_ENDPOINT).replace(/\/+$/, '');
 }
 
+function toFormattedItems(items: CartItem[]) {
+	return items.map((item) => ({ ...item, cad: formatMoney(parseMoney(item.cad), '') }));
+}
+
 export function buildOrderId(date = new Date()) {
 	return `W26-${date.getTime().toString().slice(-8)}`;
 }
@@ -37,7 +41,7 @@ export async function submitOrder(order: OrderSubmission): Promise<OrderSubmitRe
 		const response = await fetch(endpoint, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(order)
+			body: JSON.stringify({ ...order, items: toFormattedItems(order.items) })
 		});
 
 		const text = await response.text();

@@ -27,6 +27,7 @@ ENV DB_PATH=/data/db.sqlite3 PORT=8080
 
 USER root
 RUN mkdir -p /data && chown 65534:65534 /data
+COPY src/data/w26-inventory.csv /usr/local/share/artist-colony/w26-inventory.csv
 USER 65534
 
 VOLUME ["/data"]

@@ -1,0 +1,13 @@
+node_modules
+build
+.svelte-kit
+.git
+.env
+**/.md
+**/.example
+**/.*
+data
+server/data
+db
+static
+Dockerfile

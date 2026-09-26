@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,12 +43,23 @@ type computedItem struct {
 	UnitPriceCents    int
 	Quantity          int
 	LineSubtotalCents int
+	LineAction        string
 }
 
 type appServer struct {
-	db              *store
-	allowedOrigin   string
-	inventoryPrices map[string]int
+	db                   *store
+	allowedOrigin        string
+	inventoryPrices      map[string]int
+	inventoryItems       []inventoryItemJSON
+	inventoryItemsByID   map[string]inventoryItemJSON
+	inventoryMu          sync.Mutex
+	staffSessionTTLHours int
+}
+
+func jsonDecode(r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(v)
 }
 
 func envOr(key, fallback string) string {
@@ -71,10 +84,10 @@ func priceCents(value string) (int, bool) {
 // loadInventoryPrices loads the authoritative data source,
 // ignore known unit prices from client unless we don't have the product code
 //   could be loaded in frontend before backend catches up
-func loadInventoryPrices(path string) (map[string]int, error) {
+func loadInventoryPrices(path string) (map[string]int, []inventoryItemJSON, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open inventory CSV: %w", err)
+		return nil, nil, fmt.Errorf("open inventory CSV: %w", err)
 	}
 	defer f.Close()
 
@@ -85,42 +98,93 @@ func loadInventoryPrices(path string) (map[string]int, error) {
 
 	records, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("read inventory CSV: %w", err)
+		return nil, nil, fmt.Errorf("read inventory CSV: %w", err)
 	}
 	if len(records) < 2 {
-		return nil, fmt.Errorf("inventory CSV has no data rows")
+		return nil, nil, fmt.Errorf("inventory CSV has no data rows")
 	}
 
 	codeIdx, priceIdx := -1, -1
+	colIdx := map[string]int{}
 	for i, col := range records[0] {
 		trimmed := strings.TrimSpace(col)
-		if trimmed == "Product Code" {
+		switch {
+		case trimmed == "Product Code":
 			codeIdx = i
-		}
-		if strings.HasPrefix(trimmed, "Price per unit") {
+		case strings.HasPrefix(trimmed, "Price per unit"):
 			priceIdx = i
+		case trimmed == "Shop Name":
+			colIdx["shop"] = i
+		case trimmed == "Artist Name":
+			colIdx["artist"] = i
+		case trimmed == "Item Name":
+			colIdx["title"] = i
+		case trimmed == "Item Type":
+			colIdx["type"] = i
+		case trimmed == "Product Display":
+			colIdx["display"] = i
+		case trimmed == "Quantity":
+			colIdx["quantity"] = i
+		case trimmed == "Notes":
+			colIdx["notes"] = i
 		}
 	}
 	if codeIdx < 0 || priceIdx < 0 {
-		return nil, fmt.Errorf("inventory CSV missing Product Code / Price per unit columns")
+		return nil, nil, fmt.Errorf("inventory CSV missing Product Code / Price per unit columns")
+	}
+
+	pick := func(row []string, key string) string {
+		idx, ok := colIdx[key]
+		if !ok || idx >= len(row) {
+			return ""
+		}
+		return strings.TrimSpace(row[idx])
 	}
 
 	prices := make(map[string]int, len(records)-1)
+	items := make([]inventoryItemJSON, 0, len(records)-1)
 	for _, row := range records[1:] {
 		if codeIdx >= len(row) || priceIdx >= len(row) {
 			continue
 		}
 		code := strings.TrimSpace(row[codeIdx])
+		title := pick(row, "title")
 		if code == "" {
 			continue
 		}
 		cents, ok := priceCents(row[priceIdx])
 		if !ok {
-			return nil, fmt.Errorf("product %q has malformed price %q (expect decimal like 8.00)", code, row[priceIdx])
+			return nil, nil, fmt.Errorf("product %q has malformed price %q (expect decimal like 8.00)", code, row[priceIdx])
 		}
 		prices[code] = cents
+
+		var qty *int
+		if raw := pick(row, "quantity"); raw != "" {
+			cleaned := strings.Map(func(r rune) rune {
+				if r >= '0' && r <= '9' || r == '-' {
+					return r
+				}
+				return -1
+			}, raw)
+			if parsed, err := strconv.Atoi(cleaned); err == nil {
+				qty = &parsed
+			}
+		}
+		items = append(items, inventoryItemJSON{
+			ID:             code + "::" + title,
+			ShopName:       pick(row, "shop"),
+			ArtistName:     pick(row, "artist"),
+			ProductCode:    code,
+			Title:          title,
+			ItemType:       pick(row, "type"),
+			ProductDisplay: pick(row, "display"),
+			Quantity:       qty,
+			PriceCents:     cents,
+			Notes:          pick(row, "notes"),
+			SoldOut:        soldOutRe.MatchString(title),
+		})
 	}
-	return prices, nil
+	return prices, items, nil
 }
 
 func (s *appServer) corsMiddleware(next http.Handler) http.Handler {
@@ -131,8 +195,8 @@ func (s *appServer) corsMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Add("Vary", "Origin")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -226,14 +290,14 @@ func (s *appServer) handleOrder(w http.ResponseWriter, r *http.Request) {
 		if quantity <= 0 {
 			quantity = 1
 		}
-		
+
 		code := strings.TrimSpace(item.ProductCode)
 		unitPriceCents, known := s.inventoryPrices[code]
 		if !known {
 			log.Printf("order %q: product %q not in inventory, using client price", sub.OrderID, code)
 			unitPriceCents, _ = priceCents(item.UnitPrice)
 		}
-		
+
 		lineSubtotalCents := unitPriceCents * quantity
 		subtotalCents += lineSubtotalCents
 		computed = append(computed, computedItem{
@@ -277,16 +341,34 @@ func main() {
 	defer database.Close()
 
 	inventoryPath := envOr("INVENTORY_CSV", "/usr/local/share/artist-colony/w26-inventory.csv")
-	prices, err := loadInventoryPrices(inventoryPath)
+	prices, items, err := loadInventoryPrices(inventoryPath)
 	if err != nil {
 		log.Fatalf("load inventory: %v", err)
 	}
 	log.Printf("loaded %d inventory prices from %s", len(prices), inventoryPath)
 
+	ttlHours := 96 // should cover all 4 days of the event
+	if raw := os.Getenv("STAFF_SESSION_TTL_HOURS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			ttlHours = parsed
+		}
+	}
+
 	s := &appServer{
-		db:              &store{db: database},
-		allowedOrigin:   allowedOrigin,
-		inventoryPrices: prices,
+		db:                   &store{db: database},
+		allowedOrigin:        allowedOrigin,
+		inventoryPrices:      prices,
+		inventoryItems:       items,
+		inventoryItemsByID:   make(map[string]inventoryItemJSON, len(items)),
+		staffSessionTTLHours: ttlHours,
+	}
+	for _, item := range items {
+		s.inventoryItemsByID[item.ID] = item
+	}
+
+	ctx := context.Background()
+	if err := s.db.seedStaffUsers(ctx); err != nil {
+		log.Fatalf("seed staff users: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -295,10 +377,25 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	mux.HandleFunc("POST /staff/login", s.handleStaffLogin)
+	mux.HandleFunc("POST /staff/logout", s.handleStaffLogout)
+
+	staffMux := http.NewServeMux()
+	staffMux.HandleFunc("GET /staff/orders", s.handleListOrders)
+	staffMux.HandleFunc("POST /staff/orders", s.handleCreateStaffOrder)
+	staffMux.HandleFunc("GET /staff/orders/{orderId}", s.handleGetOrder)
+	staffMux.HandleFunc("POST /staff/orders/{orderId}/status", s.handleUpdateOrderStatus)
+	staffMux.HandleFunc("PATCH /staff/orders/{orderId}/notes", s.handleUpdateOrderNotes)
+	staffMux.HandleFunc("PATCH /staff/orders/{orderId}/lines/{lineIndex}", s.handleUpdateOrderLine)
+	staffMux.HandleFunc("POST /staff/orders/{orderId}/send-invoice", s.handleSendInvoice)
+	staffMux.HandleFunc("POST /staff/orders/{orderId}/notified", s.handleMarkNotified)
+	staffMux.HandleFunc("GET /staff/inventory", s.handleListInventory)
+	staffMux.HandleFunc("PATCH /staff/inventory/{id}/sold-out", s.handleSetSoldOut)
+	mux.Handle("/staff/", s.staffAuthMiddleware(staffMux))
+
 	addr := ":" + port
 	log.Printf("order server listening on %s", addr)
 	if err := http.ListenAndServe(addr, s.corsMiddleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }
-

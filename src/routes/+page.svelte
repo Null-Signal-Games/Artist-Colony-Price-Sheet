@@ -1,17 +1,24 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
+	import { afterNavigate } from '$app/navigation';
 	import { cart, cartCount, cartItemId, parseMoney } from '$lib/cart';
 	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
+	import { shopPromoDetails } from '$lib/artistDetails';
+	import { isStaffSession } from '$lib/staff/staffIdentity';
 
 	export let data: {
 		lastUpdated: string;
 		csvData: { [key: string]: string }[];
 		shopNames: Set<string>;
+		artistPromos?: Record<string, { label: string; href?: string }[]>;
 	};
+
+	const MERCH_TABLE_FILTER = '__merch_table__';
 
 	let selectedShop = '';
 	let searchTerm = '';
+	let staffSession = false;
 
 	const shopColumnKey = 'Shop Name';
 	const artistColumnKey = 'Artist Name';
@@ -40,6 +47,14 @@
 		return (row[productDisplayKey] ?? '').trim().toLowerCase() === 'merch table';
 	}
 
+	function isMerchTableQuery(q: string) {
+		const normalized = q.toLowerCase().trim();
+		if (!normalized) return false;
+		const compact = normalized.replace(/[^a-z0-9]/g, '');
+		if (compact === 'merch' || compact === 'mt' || compact.includes('merchtable')) return true;
+		return /^merch[\s_-]*table(\s+(order|orders|item|items))?$/i.test(normalized);
+	}
+
 	function isArtistDisplayItem(row: { [key: string]: string }) {
 		return (row[productDisplayKey] ?? '').trim().toLowerCase() === 'artist display';
 	}
@@ -55,7 +70,9 @@
 	}
 
 	function canAddToCart(row: { [key: string]: string }) {
-		return isArtistDisplayItem(row) && !isNotesOnlyItem(row) && !isSoldOutItem(row);
+		if (isNotesOnlyItem(row) || isSoldOutItem(row)) return false;
+		if (isArtistDisplayItem(row)) return true;
+		return staffSession && isMerchTableItem(row);
 	}
 
 	function shopName(row: { [key: string]: string }) {
@@ -69,12 +86,19 @@
 			const shop = shopName(row).toLowerCase();
 			const matchesSearch =
 				!term ||
+				(isMerchTableQuery(term) && isMerchTableItem(row)) ||
 				title.includes(term) ||
 				(row[productCodeKey] && row[productCodeKey].toLowerCase().includes(term)) ||
 				(row[artistColumnKey] && row[artistColumnKey].toLowerCase().includes(term)) ||
 				shop.includes(term);
 
-			return matchesSearch && (!selectedShop || shopName(row) === selectedShop);
+			return (
+				matchesSearch &&
+				(!selectedShop ||
+					(selectedShop === MERCH_TABLE_FILTER
+						? isMerchTableItem(row)
+						: shopName(row) === selectedShop))
+			);
 		})
 		.sort((a, b) => {
 			const shopA = shopName(a);
@@ -88,6 +112,7 @@
 	$: artistGroups = (() => {
 		const groups: {
 			artist: string;
+			details: { label: string; href?: string }[];
 			rows: { [key: string]: string }[];
 		}[] = [];
 
@@ -98,10 +123,12 @@
 			if (!last || last.artist !== shop) {
 				groups.push({
 					artist: shop,
+					details: shopPromoDetails(shop, [row], data.artistPromos ?? {}),
 					rows: [row]
 				});
 			} else {
 				last.rows.push(row);
+				last.details = shopPromoDetails(shop, last.rows, data.artistPromos ?? {});
 			}
 		}
 
@@ -170,6 +197,7 @@
 	}
 
 	onMount(() => {
+		staffSession = isStaffSession();
 		const header = document.querySelector('.fixed-container');
 		const columnHeader = document.querySelector('.fixed-header');
 		updateArtistStickyState();
@@ -185,6 +213,10 @@
 			window.removeEventListener('resize', updateArtistStickyState);
 			window.removeEventListener('scroll', updateArtistStickyState);
 		};
+	});
+
+	afterNavigate(() => {
+		staffSession = isStaffSession();
 	});
 
 	function clearAll() {
@@ -259,6 +291,7 @@
 			{#each shopOptions as shop}
 				<option value={shop}>{shop}</option>
 			{/each}
+			<option value={MERCH_TABLE_FILTER}>Merch Table Items</option>
 		</select>
 		<div class="search-row">
 			<input
@@ -325,7 +358,7 @@
 				<tbody>
 					<tr class="artist-divider">
 						<td colspan="5">
-							<ArtistGroupHeading artist={group.artist} />
+							<ArtistGroupHeading artist={group.artist} details={group.details} />
 						</td>
 					</tr>
 					{#each group.rows as row, i}
@@ -339,6 +372,9 @@
 								{#if isNotesOnlyItem(row)}
 									<!-- skip, this line is for notes, no product code -->
 								{:else if isMerchTableItem(row)}
+									{#if (row[productCodeKey] ?? '').trim()}
+										<div class="merch-table-code">{row[productCodeKey]}</div>
+									{/if}
 									<em class="unique-item-note">*Merch Table</em>
 								{:else}
 									{row[productCodeKey]}
@@ -361,6 +397,19 @@
 								<td class="cart-cell">
 									{#if isSoldOutItem(row)}
 										<em class="unique-item-note">SOLD OUT</em>
+									{:else if isMerchTableItem(row)}
+										{#if staffSession}
+											<button
+												type="button"
+												class="add-to-cart-button"
+												class:is-added={addedItemIds[rowId(row)]}
+												on:click={() => addToCart(row)}
+											>
+												{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
+											</button>
+										{:else}
+											<em class="unique-item-note">*Buy at Merch Table</em>
+										{/if}
 									{:else if canAddToCart(row)}
 										<button
 											type="button"
@@ -370,8 +419,6 @@
 										>
 											{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
 										</button>
-									{:else if isMerchTableItem(row)}
-										<em class="unique-item-note">*Buy at Merch Table</em>
 									{/if}
 								</td>
 							{/if}
@@ -386,7 +433,7 @@
 			{#each artistGroups as group}
 				<section class="mobile-artist-group">
 					<div class="mobile-artist-divider">
-						<ArtistGroupHeading artist={group.artist} />
+						<ArtistGroupHeading artist={group.artist} details={group.details} />
 					</div>
 					{#each group.rows as row, i}
 						<div
@@ -405,6 +452,9 @@
 							{:else}
 								<div class="mobile-left">
 									{#if isMerchTableItem(row)}
+										{#if (row[productCodeKey] ?? '').trim()}
+											<div class="mobile-product-code merch-table-code">{row[productCodeKey]}</div>
+										{/if}
 										<em class="unique-item-note">*Merch Table</em>
 									{:else}
 										<div class="mobile-product-code">{row[productCodeKey]}</div>
@@ -420,6 +470,19 @@
 								</div>
 								{#if isSoldOutItem(row)}
 									<em class="unique-item-note">SOLD OUT</em>
+								{:else if isMerchTableItem(row)}
+									{#if staffSession}
+										<button
+											type="button"
+											class="add-to-cart-button"
+											class:is-added={addedItemIds[rowId(row)]}
+											on:click={() => addToCart(row)}
+										>
+											{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
+										</button>
+									{:else}
+										<em class="unique-item-note">*Buy at Merch Table</em>
+									{/if}
 								{:else if canAddToCart(row)}
 									<button
 										type="button"
@@ -429,8 +492,6 @@
 									>
 										{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
 									</button>
-								{:else if isMerchTableItem(row)}
-									<em class="unique-item-note">*Buy at Merch Table</em>
 								{/if}
 							{/if}
 						</div>

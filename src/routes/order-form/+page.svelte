@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import OrderItemsTable from '$lib/OrderItemsTable.svelte';
 	import { cart, cartCount, formatMoney, parseMoney, type CartItem } from '$lib/cart';
 	import {
@@ -6,6 +8,10 @@
 		buildSubtotal,
 		submitOrder as submitOrderToServer
 	} from '$lib/submitOrder';
+	import { getCurrentStaffName, isStaffSession, staffApi } from '$lib/staff/api';
+
+  // default so that we don't need to collect emails at the merch table
+	const MERCH_STAFF_EMAIL = 'marketing@nullsignal.games';
 
 	let name = '';
 	let discordHandle = '';
@@ -16,9 +22,31 @@
 	let timestamp = '';
 	let orderId = '';
 	let submittedItems: CartItem[] = [];
+	let staffSession = false;
+	let merchTableOrder = false;
 
 	$: items = submitted ? submittedItems : $cart;
 	$: cadTotal = items.reduce((total, item) => total + parseMoney(item.cad) * item.quantity, 0);
+	$: customerFieldsRequired = !merchTableOrder;
+
+	onMount(() => {
+		staffSession = isStaffSession();
+	});
+
+	function staffNameDefault() {
+		return `(${getCurrentStaffName()})`;
+	}
+
+	function onMerchTableChange() {
+		const staffDefault = staffNameDefault();
+		if (merchTableOrder) {
+			if (!name.trim()) name = staffDefault;
+			if (!email.trim()) email = MERCH_STAFF_EMAIL;
+		} else {
+			if (name.trim() === staffDefault) name = '';
+			if (email.trim() === MERCH_STAFF_EMAIL) email = '';
+		}
+	}
 
 	function formatTimestamp(date: Date) {
 		const parts = new Intl.DateTimeFormat('en-CA', {
@@ -43,44 +71,90 @@
 		const nameInput = form.querySelector<HTMLInputElement>('input[autocomplete="name"]');
 		const emailInput = form.querySelector<HTMLInputElement>('input[type="email"]');
 
-		nameInput?.setCustomValidity(name.trim() ? '' : 'Please enter your name');
-		emailInput?.setCustomValidity(email.trim() ? '' : 'Please enter your email');
+		if (merchTableOrder) {
+			nameInput?.setCustomValidity('');
+			emailInput?.setCustomValidity('');
+		} else {
+			nameInput?.setCustomValidity(name.trim() ? '' : 'Please enter your name');
+			emailInput?.setCustomValidity(email.trim() ? '' : 'Please enter your email');
+		}
 
 		if (!form.checkValidity()) {
 			form.reportValidity();
 			return;
 		}
 
-		name = name.trim();
-		email = email.trim();
+		name = name.trim() || (merchTableOrder ? staffNameDefault() : '');
+		email = email.trim() || (merchTableOrder ? MERCH_STAFF_EMAIL : '');
 		discordHandle = discordHandle.trim();
 		submitError = '';
 		submitting = true;
 
-		const nextOrderId = buildOrderId();
+		const nextOrderId = buildOrderId(new Date(), { merchTableOrder });
 		const snapshot = $cart.map((item) => ({ ...item }));
-		const result = await submitOrderToServer({
-			orderId: nextOrderId,
-			name,
-			discordHandle,
-			email,
-			items: snapshot,
-			subtotal: buildSubtotal(snapshot),
-			submittedAt: new Date().toISOString()
-		});
+		const staffName = staffSession || isStaffSession() ? getCurrentStaffName() : '';
 
-		submitting = false;
+		try {
+			if (staffSession && staffName) {
+				const order = await staffApi.createStaffOrder(
+					{
+						orderId: nextOrderId,
+						name,
+						discordHandle,
+						email,
+						items: snapshot.map((item) => ({
+							productCode: item.productCode,
+							title: item.title,
+							artist: item.artist,
+							unitPriceCents: Math.round(parseMoney(item.cad) * 100),
+							quantity: item.quantity
+						})),
+						submittedByStaffName: staffName,
+						merchTableOrder
+					},
+					{ staffName }
+				);
+				void submitOrderToServer({
+					orderId: order.orderId,
+					name,
+					discordHandle,
+					email,
+					items: snapshot,
+					subtotal: buildSubtotal(snapshot),
+					submittedAt: new Date().toISOString(),
+					submittedByStaffName: staffName,
+					...(merchTableOrder ? { merchTableOrder: true } : {})
+				});
+				cart.clear();
+				await goto(`/staff?order=${encodeURIComponent(order.orderId)}`);
+				return;
+			}
 
-		if (!result.ok) {
-			submitError = result.error;
-			return;
+			const result = await submitOrderToServer({
+				orderId: nextOrderId,
+				name,
+				discordHandle,
+				email,
+				items: snapshot,
+				subtotal: buildSubtotal(snapshot),
+				submittedAt: new Date().toISOString()
+			});
+
+			if (!result.ok) {
+				submitError = result.error;
+				return;
+			}
+
+			orderId = result.orderId;
+			submittedItems = snapshot;
+			timestamp = formatTimestamp(new Date());
+			submitted = true;
+			cart.clear();
+		} catch (err) {
+			submitError = err instanceof Error ? err.message : 'Could not submit order.';
+		} finally {
+			submitting = false;
 		}
-
-		orderId = result.orderId;
-		submittedItems = snapshot;
-		timestamp = formatTimestamp(new Date());
-		submitted = true;
-		cart.clear()
 	}
 </script>
 
@@ -98,6 +172,9 @@
 					<p class="order-timestamp">{timestamp}</p>
 					{#if orderId}
 						<p class="order-id">Order {orderId}</p>
+					{/if}
+					{#if merchTableOrder}
+						<p class="order-merch-flag">Merch Table Order</p>
 					{/if}
 					<dl class="order-fields">
 						<div>
@@ -139,12 +216,23 @@
 		{:else}
 			<form class="order-details-form" on:submit|preventDefault={submitOrder}>
 				<h2 class="order-page-title">Order Form</h2>
+				{#if staffSession}
+					<label class="merch-table-order-check">
+						<input
+							type="checkbox"
+							bind:checked={merchTableOrder}
+							disabled={submitting}
+							on:change={onMerchTableChange}
+						/>
+						<span>Merch Table Order</span>
+					</label>
+				{/if}
 				<label>
-					Name*
+					{customerFieldsRequired ? 'Name*' : 'Name'}
 					<input
 						type="text"
 						bind:value={name}
-						required
+						required={customerFieldsRequired}
 						autocomplete="name"
 						disabled={submitting}
 						on:input={(event) => event.currentTarget.setCustomValidity('')}
@@ -162,11 +250,11 @@
 						/>
 					</label>
 					<label>
-						Email*
+						{customerFieldsRequired ? 'Email*' : 'Email'}
 						<input
 							type="email"
 							bind:value={email}
-							required
+							required={customerFieldsRequired}
 							autocomplete="email"
 							disabled={submitting}
 							on:input={(event) => event.currentTarget.setCustomValidity('')}

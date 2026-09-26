@@ -32,6 +32,49 @@ CREATE TABLE IF NOT EXISTS order_items (
   line_subtotal_cents INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS staff_notes TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS submitted_by_staff_name TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS merch_table_order BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS notification_channel TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_invoice_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_reason_other TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS closed_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS closed_reason_other TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS collected BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS line_action TEXT NOT NULL DEFAULT '';
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS collected_quantity INTEGER;
+CREATE TABLE IF NOT EXISTS staff_users (
+  id SERIAL PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS staff_sessions (
+  token_hash TEXT PRIMARY KEY,
+  staff_user_id INTEGER NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_staff_sessions_expires_at ON staff_sessions(expires_at);
+CREATE TABLE IF NOT EXISTS order_history (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT,
+  staff_name TEXT NOT NULL DEFAULT '',
+  at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_order_history_order_id ON order_history(order_id);
+CREATE TABLE IF NOT EXISTS inventory_sold_out (
+  item_id TEXT PRIMARY KEY,
+  sold_out BOOLEAN NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `
 
 func openDB(connStr string) (*sql.DB, error) {

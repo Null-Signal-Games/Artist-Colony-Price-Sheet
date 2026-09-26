@@ -12,6 +12,8 @@ export type OrderSubmission = {
 	items: CartItem[];
 	subtotal: string;
 	submittedAt: string;
+	submittedByStaffName?: string;
+	merchTableOrder?: boolean;
 };
 
 export type OrderSubmitResult = { ok: true; orderId: string } | { ok: false; error: string };
@@ -25,8 +27,10 @@ function toFormattedItems(items: CartItem[]) {
 	return items.map((item) => ({ ...item, cad: formatMoney(parseMoney(item.cad), '') }));
 }
 
-export function buildOrderId(date = new Date()) {
-	return `W26-${date.getTime().toString().slice(-8)}`;
+export function buildOrderId(date = new Date(), options?: { merchTableOrder?: boolean }) {
+	const n = String(date.getTime() % 10000).padStart(4, '0');
+	const id = `W26-${n}`;
+	return options?.merchTableOrder ? `${id}M` : id;
 }
 
 export function buildSubtotal(items: CartItem[]) {

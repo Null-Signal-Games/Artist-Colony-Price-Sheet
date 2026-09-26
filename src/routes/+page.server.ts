@@ -5,6 +5,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { readFileSync, statSync } from 'fs';
 import path from 'path';
+import { buildArtistPromoIndex, type ArtistDetail } from '$lib/artistDetails';
 
 dayjs.extend(localizedFormat);
 dayjs.extend(utc);
@@ -13,6 +14,7 @@ dayjs.extend(timezone);
 type CSVRow = { [key: string]: string };
 
 const INVENTORY_FILE = 'w26-inventory.csv';
+const ARTISTS_FILE = 'w26-artists.csv';
 
 const NORMALIZED_COLUMNS = [
 	'Shop Name',
@@ -78,14 +80,15 @@ export const prerender = true;
 export async function load() {
 	const inventoryPath = path.resolve(process.cwd(), 'src', 'data', INVENTORY_FILE);
 	const parsedInventory = loadCsv(INVENTORY_FILE);
+	const parsedArtists = loadCsv(ARTISTS_FILE);
 
 	const csvData = normalizeInventoryRows(parsedInventory).filter((row) =>
 		NORMALIZED_COLUMNS.some((column) => row[column])
 	);
 
-	const shopNames = new Set(
-		csvData.map((row) => row['Shop Name']).filter((name) => Boolean(name))
-	);
+	const artistPromos: Record<string, ArtistDetail[]> = buildArtistPromoIndex(parsedArtists);
+
+	const shopNames = new Set(csvData.map((row) => row['Shop Name']).filter((name) => Boolean(name)));
 	const lastUpdated = dayjs(statSync(inventoryPath).mtimeMs)
 		.tz('America/New_York')
 		.format('dddd YYYY-MM-DD [at] h:mma');
@@ -93,6 +96,7 @@ export async function load() {
 	return {
 		csvData,
 		lastUpdated,
-		shopNames
+		shopNames,
+		artistPromos
 	};
 }

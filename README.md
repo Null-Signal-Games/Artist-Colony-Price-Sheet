@@ -38,15 +38,26 @@ answers CORS preflights for cross-origin GH Pages.
 
 ### Run locally with Docker
 
+Setup docker network
+
+```sh
+docker network create ac-dev
+```
+
 Run a local postgres container:
 
 ```fish
 set -x POSTGRES_PASSWORD (head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
 docker run --rm --name ac-dev-db \
+  --network ac-dev \
   -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
   -p 5432:5432 \
   -d postgres:17
+```
 
+Create DB:
+
+```fish
 docker exec ac-dev-db \
   psql -U postgres -c 'CREATE DATABASE "artist-colony-orders";'
 ```
@@ -63,9 +74,10 @@ _set uid/gid, the directory needs owner permissions_
 
 ```fish
 docker run --rm \
-  --network host \
-  -e DB_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/artist-colony-orders?sslmode=disable' \
+  --network ac-dev \
+  -e DB_CONNECTION_STRING="postgres://postgres:$POSTGRES_PASSWORD@ac-dev-db:5432/artist-colony-orders?sslmode=disable" \
   -e ALLOWED_ORIGIN=http://localhost:5173 \
+  -p 8080:8080 \
   local/artist-colony-orders:dev
 ```
 

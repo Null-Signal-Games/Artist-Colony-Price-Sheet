@@ -31,17 +31,30 @@ npm run dev -- --open
 
 ## Order server
 
-accepts `POST /order` with a JSON order payload and stores it in a db
+accepts `POST /order` with a JSON order payload and stores it in Postgres
 (local dev is `./data/db.sqlite3`)
 
 answers CORS preflights for cross-origin GH Pages.
 
 ### Run locally with Docker
 
+Run a local postgres container:
+
+```fish
+set -x POSTGRES_PASSWORD (head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+docker run --rm --name ac-dev-db \
+  -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
+  -p 5432:5432 \
+  -d postgres:17
+
+docker exec ac-dev-db \
+  psql -U postgres -c 'CREATE DATABASE "artist-colony-orders";'
+```
+
 build:
 
 ```sh
-docker build -t local/artist-colony-orders:dev --target dev .
+docker build -t local/artist-colony-orders:dev .
 ```
 
 run:
@@ -49,12 +62,10 @@ run:
 _set uid/gid, the directory needs owner permissions_
 
 ```fish
-mkdir -p db
-
 docker run --rm \
-  -p 8080:8080 \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD/db":/data \
+  --network host \
+  -e DB_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/artist-colony-orders?sslmode=disable' \
+  -e ALLOWED_ORIGIN=http://localhost:5173 \
   local/artist-colony-orders:dev
 ```
 
@@ -74,18 +85,28 @@ and restart `npm run dev` if it's still running
 ### Local DB Inspection
 
 ```sh
-sqlite3 db/db.sqlite3
+docker exec -it ac-dev-db psql -U postgres -d artist-colony-orders
 ```
 
 ```sql
 SELECT * FROM orders;
 
-SELECT * FROM orders
+SELECT o.order_id, o.name, oi.title, oi.quantity
+FROM orders o
 INNER JOIN order_items oi
-ON o.order_id = oi.order_id;
+ON oi.order_id = o.id;
 ```
 
-## Building
+
+### Manual Build and Deploy Server
+
+```sh
+docker buildx build \
+    -t registry.digitalocean.com/nsgcr/artist-colony-orders-api:v0.1.0 \
+    --push .
+```
+
+## Building Client
 
 To create a production version of your app:
 

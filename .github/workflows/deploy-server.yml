@@ -1,0 +1,80 @@
+name: Build and Deploy Server to k8s
+
+# This action works with pull requests and pushes
+on:
+  release:
+    types: [published]
+
+env:
+  IMAGE_NAME: registry.digitalocean.com/nsgcr/artist-colony-orders-api
+  CLUSTER_NAME: k8s-1-33-1-do-3-fra1-1757785023859
+  K8S_NAMESPACE: nsg-artist-colony-orders
+
+jobs:
+  changes:
+    name: Check for server changes
+    runs-on: ubuntu-latest
+    outputs:
+      server: ${{ steps.diff.outputs.server }}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Diff against the previous release tag
+        id: diff
+        run: |
+          prev=$(git tag --sort=-creatordate | grep -v "^${{ github.ref_name }}$" | head -1 || true)
+          if [ -z "$prev" ]; then
+            # first release: nothing to compare against, assume relevant
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "comparing $prev..HEAD"
+          if git diff --name-only "$prev"..HEAD | grep -qE '^(Dockerfile|server/|src/data/w26-inventory\.csv$)'; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "server=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Deploy
+    needs: changes
+    if: needs.changes.outputs.server == 'true' # Only trigger on server-side changes
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout the repo
+
+      - name: Checkout the repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@135ac0aa0eed4437d547c6f12c364d3006b42824 # v2.5.1
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+           version: v1.33.5
+
+      - name: Log in to DO Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      - name: DOKS Auth
+        run: |
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+
+      - name: Build & Push Image
+        run: docker buildx build -t $IMAGE_NAME:${{ github.ref_name }} --push .
+
+      - name: Update deployment image tag
+        run: |
+          kubectl -n $K8S_NAMESPACE set image \
+            deployment/artist-colony-orders-api \
+            artist-colony-orders-api=$IMAGE_NAME:${{ github.ref_name }}

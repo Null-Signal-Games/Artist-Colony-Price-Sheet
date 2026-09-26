@@ -1,10 +1,20 @@
-name: Build and Deploy to GitHub Pages
+name: Build and Deploy Client to GitHub Pages
 
 on:
   push:
     branches:
       - main
+    paths-ignore: # Only trigger on client-side changes
+      - 'server/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'README.md'
   pull_request:
+    paths-ignore: # Only trigger on client-side changes
+      - 'server/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'README.md'
 
 permissions:
   contents: read

@@ -3,27 +3,26 @@ package main
 import (
 	"context"
 	"database/sql"
-	"os"
-	"path/filepath"
+	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/lib/pq"
 )
 
 // @TODO: add orm or migration framework
 const schema = `
 CREATE TABLE IF NOT EXISTS orders (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   order_id TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   discord_handle TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL,
   subtotal_cents INTEGER NOT NULL DEFAULT 0,
   submitted_at TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS order_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_code TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL,
@@ -35,15 +34,18 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 `
 
-func openDB(dbPath string) (*sql.DB, error) {
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+func openDB(connStr string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
 		return nil, err
 	}
 
-	dsn := dbPath + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, err
+	// crash on startup if db is missing/unreachable
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("cannot reach database: %w", err)
 	}
 
 	if _, err := db.Exec(schema); err != nil {
@@ -74,15 +76,12 @@ func (s *store) insertOrder(sub *orderSubmission, computed []computedItem, subto
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx, `
+	var orderRowID int64
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO orders (order_id, name, discord_handle, email, subtotal_cents, submitted_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		sub.OrderID, sub.Name, sub.DiscordHandle, sub.Email, subtotalCents, sub.SubmittedAt)
-	if err != nil {
-		return 0, err
-	}
-
-	orderRowID, err := res.LastInsertId()
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id`,
+		sub.OrderID, sub.Name, sub.DiscordHandle, sub.Email, subtotalCents, sub.SubmittedAt).Scan(&orderRowID)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +89,7 @@ func (s *store) insertOrder(sub *orderSubmission, computed []computedItem, subto
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO order_items
 			(order_id, product_code, title, artist, unit_price_cents, quantity, line_subtotal_cents)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`)
 	if err != nil {
 		return 0, err
 	}

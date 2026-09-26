@@ -3,14 +3,11 @@
 	import { browser } from '$app/environment';
 	import { cart, cartCount, cartItemId, parseMoney } from '$lib/cart';
 	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
-	import { shopPromoDetails } from '$lib/artistDetails';
 
 	export let data: {
 		lastUpdated: string;
 		csvData: { [key: string]: string }[];
-		shopNames?: Set<string>;
-		artistNames: Set<string>;
-		artistPromos?: Record<string, { label: string; href?: string }[]>;
+		shopNames: Set<string>;
 	};
 
 	let selectedShop = '';
@@ -32,7 +29,7 @@
 		if (shop && !shopOrder.has(shop)) shopOrder.set(shop, index);
 	});
 
-	const shopOptions = Array.from(data.shopNames ?? data.artistNames).sort((a, b) => {
+	const shopOptions = Array.from(data.shopNames).sort((a, b) => {
 		const orderA = shopOrder.get(a) ?? Number.MAX_SAFE_INTEGER;
 		const orderB = shopOrder.get(b) ?? Number.MAX_SAFE_INTEGER;
 		if (orderA !== orderB) return orderA - orderB;
@@ -91,7 +88,6 @@
 	$: artistGroups = (() => {
 		const groups: {
 			artist: string;
-			details: { label: string; href?: string }[];
 			rows: { [key: string]: string }[];
 		}[] = [];
 
@@ -102,12 +98,10 @@
 			if (!last || last.artist !== shop) {
 				groups.push({
 					artist: shop,
-					details: shopPromoDetails(shop, [row], data.artistPromos ?? {}),
 					rows: [row]
 				});
 			} else {
 				last.rows.push(row);
-				last.details = shopPromoDetails(shop, last.rows, data.artistPromos ?? {});
 			}
 		}
 
@@ -279,7 +273,6 @@
 				>&times;</button
 			>
 		{/if}
-		<a class="print-catalogue-link" href="/print">Print</a>
 	</div>
 </div>
 <div class="page-container" class:has-order-cta={$cartCount > 0}>
@@ -332,7 +325,7 @@
 				<tbody>
 					<tr class="artist-divider">
 						<td colspan="5">
-							<ArtistGroupHeading artist={group.artist} details={group.details} />
+							<ArtistGroupHeading artist={group.artist} />
 						</td>
 					</tr>
 					{#each group.rows as row, i}
@@ -393,7 +386,7 @@
 			{#each artistGroups as group}
 				<section class="mobile-artist-group">
 					<div class="mobile-artist-divider">
-						<ArtistGroupHeading artist={group.artist} details={group.details} />
+						<ArtistGroupHeading artist={group.artist} />
 					</div>
 					{#each group.rows as row, i}
 						<div

@@ -5,7 +5,6 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { readFileSync, statSync } from 'fs';
 import path from 'path';
-import { buildArtistPromoIndex, type ArtistDetail } from '$lib/artistDetails';
 
 dayjs.extend(localizedFormat);
 dayjs.extend(utc);
@@ -14,7 +13,6 @@ dayjs.extend(timezone);
 type CSVRow = { [key: string]: string };
 
 const INVENTORY_FILE = 'w26-inventory.csv';
-const ARTISTS_FILE = 'w26-artists.csv';
 
 const NORMALIZED_COLUMNS = [
 	'Shop Name',
@@ -80,24 +78,14 @@ export const prerender = true;
 export async function load() {
 	const inventoryPath = path.resolve(process.cwd(), 'src', 'data', INVENTORY_FILE);
 	const parsedInventory = loadCsv(INVENTORY_FILE);
-	const parsedArtists = loadCsv(ARTISTS_FILE);
-
-	// scrub the artists CSV down to only the necessary columns
-	// so pii isn't included in the distributable build
-	const promoSourceRows = parsedArtists.map((row) => ({
-		'Artist Promo Links': String(row['Artist Promo Links'] ?? ''),
-		'Artist Name': String(row['Artist Name'] ?? ''),
-		'Your Name': String(row['Your Name'] ?? ''),
-		'Discord Handle': String(row['Discord Handle'] ?? '')
-	}));
 
 	const csvData = normalizeInventoryRows(parsedInventory).filter((row) =>
 		NORMALIZED_COLUMNS.some((column) => row[column])
 	);
 
-	const artistPromos: Record<string, ArtistDetail[]> = buildArtistPromoIndex(promoSourceRows);
-
-	const shopNames = new Set(csvData.map((row) => row['Shop Name']).filter((name) => Boolean(name)));
+	const shopNames = new Set(
+		csvData.map((row) => row['Shop Name']).filter((name) => Boolean(name))
+	);
 	const lastUpdated = dayjs(statSync(inventoryPath).mtimeMs)
 		.tz('America/New_York')
 		.format('dddd YYYY-MM-DD [at] h:mma');
@@ -105,8 +93,6 @@ export async function load() {
 	return {
 		csvData,
 		lastUpdated,
-		shopNames,
-		artistNames: shopNames,
-		artistPromos
+		shopNames
 	};
 }

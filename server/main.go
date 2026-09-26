@@ -263,10 +263,14 @@ func (s *appServer) handleOrder(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	port := envOr("PORT", "8080")
-	dbPath := envOr("DB_PATH", "/data/db.sqlite3")
 	allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
 
-	database, err := openDB(dbPath)
+	connStr := os.Getenv("DB_CONNECTION_STRING")
+	if connStr == "" {
+		log.Fatal("Missing env DB_CONNECTION_STRING")
+	}
+
+	database, err := openDB(connStr)
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
@@ -292,7 +296,7 @@ func main() {
 	})
 
 	addr := ":" + port
-	log.Printf("order server listening on %s (db: %s)", addr, dbPath)
+	log.Printf("order server listening on %s", addr)
 	if err := http.ListenAndServe(addr, s.corsMiddleware(mux)); err != nil {
 		log.Fatal(err)
 	}

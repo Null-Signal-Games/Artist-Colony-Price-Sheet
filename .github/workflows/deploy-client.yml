@@ -30,7 +30,7 @@ jobs:
         with:
           node-version-file: '.nvmrc'
       - name: Install dependencies
-        run: npx pnpm i
+        run: npm install
       - name: Build site
         run: npm run build
       - name: Deploy to GitHub Pages

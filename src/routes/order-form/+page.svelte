@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import OrderItemsTable from '$lib/OrderItemsTable.svelte';
 	import { cart, cartCount, formatMoney, parseMoney, type CartItem } from '$lib/cart';
+	import { consumeCheckoutDraft } from '$lib/checkoutDraft';
 	import {
 		buildOrderId,
 		buildSubtotal,
@@ -31,6 +32,13 @@
 
 	onMount(() => {
 		staffSession = isStaffSession();
+		const draft = consumeCheckoutDraft();
+		if (draft) {
+			name = draft.name;
+			discordHandle = draft.discordHandle;
+			email = draft.email;
+			merchTableOrder = draft.merchTableOrder;
+		}
 	});
 
 	function staffNameDefault() {

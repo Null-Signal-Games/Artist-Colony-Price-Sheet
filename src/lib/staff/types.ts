@@ -36,20 +36,18 @@ export function notificationDisplayLabel(
 	return 'Not Notified Yet';
 }
 
-export type ClosedReason = 'picked_up' | 'canceled' | 'refunded' | 'other';
+// 'picked_up' -> successfully fulfilled order
+// 'closed' -> mark order as closed and not fulfilled
+export type ClosedReason = 'picked_up' | 'closed';
 
 export const CLOSED_REASONS: ClosedReason[] = [
 	'picked_up',
-	'canceled',
-	'refunded',
-	'other'
+	'closed',
 ];
 
 export const CLOSED_REASON_LABELS: Record<ClosedReason, string> = {
 	picked_up: 'Picked Up',
-	canceled: 'Canceled',
-	refunded: 'Refunded',
-	other: 'Other'
+	closed: 'Closed'
 };
 
 export function orderDisplayLabel(order: {

@@ -60,6 +60,22 @@ function createCart() {
 		remove(id: string) {
 			update((items) => items.filter((entry) => entry.id !== id));
 		},
+		// Replace entire cart
+		replace(items: Array<Omit<CartItem, 'id'> & { id?: string }>) {
+			set(
+				items.map((item) => {
+					const id = item.id ?? cartItemId(item);
+					return {
+						id,
+						productCode: item.productCode,
+						title: item.title,
+						artist: item.artist,
+						cad: item.cad,
+						quantity: Math.max(1, Math.floor(item.quantity) || 1)
+					};
+				})
+			);
+		},
 		clear() {
 			set([]);
 		}

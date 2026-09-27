@@ -220,14 +220,27 @@ type shopifyDraftOrderCreatePayload struct {
 	} `json:"draftOrderCreate"`
 }
 
+// handle errors being a string or []string
 type shopifyUserError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
+	Field   json.RawMessage `json:"field"`
+	Message string          `json:"message"`
+}
+
+func (e shopifyUserError) fieldString() string {
+	var s string
+	if err := json.Unmarshal(e.Field, &s); err == nil {
+		return s
+	}
+	var parts []string
+	if err := json.Unmarshal(e.Field, &parts); err == nil {
+		return strings.Join(parts, ".")
+	}
+	return string(e.Field)
 }
 
 func (e shopifyUserError) String() string {
-	if e.Field != "" {
-		return fmt.Sprintf("%s: %s", e.Field, e.Message)
+	if f := e.fieldString(); f != "" {
+		return fmt.Sprintf("%s: %s", f, e.Message)
 	}
 	return e.Message
 }

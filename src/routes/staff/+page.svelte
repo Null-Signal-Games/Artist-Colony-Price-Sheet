@@ -6,8 +6,6 @@
 	import { env } from '$env/dynamic/public';
 
 	import {
-		CLOSED_REASON_LABELS,
-		CLOSED_REASONS,
 		effectiveOrderItemQuantity,
 		formatCents,
 		MANUAL_PAID_REASONS,
@@ -39,6 +37,12 @@
 		readStoredFilterState,
 		writeStoredFilterState
 	} from '$lib/staff/filterState';
+	import {
+		cart,
+		cartItemId,
+		formatMoney
+	} from '$lib/cart';
+	import { writeCheckoutDraft } from '$lib/checkoutDraft';
 
 	let authed = false;
 	let authChecked = false;
@@ -61,7 +65,7 @@
 	let selectedOrderId = '';
 	let selectedOrder: Order | null = null;
 	let notesDraft = '';
-	let closedReasonOtherDraft = '';
+
 	let paidMenuOpen = false;
 	let statusMenuOpen = false;
 	let prepareConfirmOpen = false;
@@ -184,7 +188,6 @@
 				await flushNotesIfNeeded({ quiet: true });
 				selectedOrder = await staffApi.getOrder(selectedOrderId);
 				notesDraft = selectedOrder?.staffNotes ?? '';
-				closedReasonOtherDraft = selectedOrder?.closedReasonOther ?? '';
 				if (!selectedOrder) {
 					await clearSelectedOrder({ skipFlush: true });
 				}
@@ -270,7 +273,6 @@
 				return;
 			}
 			notesDraft = selectedOrder.staffNotes ?? '';
-			closedReasonOtherDraft = selectedOrder.closedReasonOther ?? '';
 			paidMenuOpen = false;
 			statusMenuOpen = false;
 		} catch (err) {
@@ -287,7 +289,6 @@
 		selectedOrderId = '';
 		selectedOrder = null;
 		notesDraft = '';
-		closedReasonOtherDraft = '';
 		paidMenuOpen = false;
 		statusMenuOpen = false;
 		prepareConfirmOpen = false;
@@ -313,19 +314,14 @@
 		error = '';
 		invoiceSuccess = '';
 		try {
-			const closedReason = options.closedReason ?? 'canceled';
+			const closedReason = options.closedReason ?? 'closed';
 			const paidReason = options.paidReason ?? 'cash';
 			const meta = staffMeta();
 			selectedOrder = await staffApi.updateOrderStatus(
 				selectedOrder.orderId,
 				status,
 				status === 'closed'
-					? {
-							...meta,
-							closedReason,
-							closedReasonOther:
-								closedReason === 'other' ? closedReasonOtherDraft.trim() : undefined
-						}
+					? { ...meta, closedReason }
 					: status === 'paid'
 						? {
 								...meta,
@@ -338,9 +334,8 @@
 									notificationChannel:
 										selectedOrder.notificationChannel ?? undefined
 								}
-							: meta
+								: meta
 			);
-			closedReasonOtherDraft = selectedOrder.closedReasonOther ?? '';
 			await refreshOrdersList();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to update status.';
@@ -349,29 +344,28 @@
 		}
 	}
 
-	async function setClosedReason(reason: ClosedReason) {
-		if (!selectedOrder || selectedOrder.status !== 'closed' || actionsLocked) return;
-		if (
-			selectedOrder.closedReason === 'canceled' ||
-			selectedOrder.closedReason === 'refunded'
-		) {
-			return;
-		}
-		saving = true;
-		error = '';
-		try {
-			selectedOrder = await staffApi.updateOrderStatus(selectedOrder.orderId, 'closed', {
-				...staffMeta(),
-				closedReason: reason,
-				closedReasonOther: reason === 'other' ? closedReasonOtherDraft.trim() : undefined
-			});
-			closedReasonOtherDraft = selectedOrder.closedReasonOther ?? '';
-			await refreshOrdersList();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to update closed reason.';
-		} finally {
-			saving = false;
-		}
+	async function duplicateOrder() {
+		if (!selectedOrder || actionsLocked) return;
+		closeStatusMenu();
+		closePaidMenu();
+		const source = selectedOrder;
+		cart.replace(
+			source.items.map((item) => ({
+				id: cartItemId(item),
+				productCode: item.productCode,
+				title: item.title,
+				artist: item.artist,
+				cad: formatMoney(item.unitPriceCents / 100, ''),
+				quantity: item.quantity
+			}))
+		);
+		writeCheckoutDraft({
+			name: source.name,
+			discordHandle: source.discordHandle,
+			email: source.email,
+			merchTableOrder: Boolean(source.merchTableOrder)
+		});
+		await goto('/order-form');
 	}
 
 	/* async function saveClosedReasonOther() {
@@ -418,8 +412,7 @@
 		const isClosedMenu =
 			selectedOrder.status === 'closed' &&
 			(selectedOrder.closedReason === 'picked_up' ||
-				selectedOrder.closedReason === 'refunded' ||
-				selectedOrder.closedReason === 'canceled');
+				selectedOrder.closedReason === 'closed');
 		if (
 			selectedOrder.status !== 'new' &&
 			selectedOrder.status !== 'prepared' &&
@@ -438,7 +431,7 @@
 		if (selectedOrder.status === 'closed') return;
 		closeStatusMenu();
 		closePaidMenu();
-		await setStatus('closed', { closedReason: 'canceled' });
+		await setStatus('closed', { closedReason: 'closed' });
 	}
 
 	async function refundOrder() {
@@ -512,10 +505,10 @@
 		selectedOrder.status === 'closed' &&
 		selectedOrder.closedReason === 'picked_up';
 
-	$: isRefunded =
+	$: isClosedOnly =
 		!!selectedOrder &&
 		selectedOrder.status === 'closed' &&
-		selectedOrder.closedReason === 'refunded';
+		selectedOrder.closedReason === 'closed';
 
 	$: isCanceled =
 		!!selectedOrder &&
@@ -1306,7 +1299,16 @@
 													disabled={actionsLocked || sendingInvoice}
 													on:click={cancelOrder}
 												>
-													Cancel Order
+													Close Order
+												</button>
+												<button
+													type="button"
+													role="menuitem"
+													class="staff-status-menu-duplicate"
+													disabled={actionsLocked}
+													on:click={duplicateOrder}
+												>
+													Duplicate Order
 												</button>
 											{:else}
 												<button
@@ -1333,7 +1335,16 @@
 													disabled={actionsLocked || sendingInvoice}
 													on:click={cancelOrder}
 												>
-													Cancel Order
+													Close Order
+												</button>
+												<button
+													type="button"
+													role="menuitem"
+													class="staff-status-menu-duplicate"
+													disabled={actionsLocked}
+													on:click={duplicateOrder}
+												>
+													Duplicate Order
 												</button>
 											{/if}
 										</div>
@@ -1394,7 +1405,16 @@
 												disabled={actionsLocked || sendingInvoice}
 												on:click={cancelOrder}
 											>
-												Cancel Order
+												Close Order
+											</button>
+											<button
+												type="button"
+												role="menuitem"
+												class="staff-status-menu-duplicate"
+												disabled={actionsLocked}
+												on:click={duplicateOrder}
+											>
+												Duplicate Order
 											</button>
 										</div>
 									{/if}
@@ -1458,7 +1478,16 @@
 												disabled={actionsLocked}
 												on:click={cancelOrder}
 											>
-												Cancel Order
+												Close Order
+											</button>
+											<button
+												type="button"
+												role="menuitem"
+												class="staff-status-menu-duplicate"
+												disabled={actionsLocked}
+												on:click={duplicateOrder}
+											>
+												Duplicate Order
 											</button>
 										</div>
 									{/if}
@@ -1511,18 +1540,18 @@
 												role="menuitem"
 												class="staff-status-menu-cancel staff-status-menu-divider"
 												disabled={actionsLocked}
-												on:click={refundOrder}
+												on:click={cancelOrder}
 											>
-												Mark As Refunded
+												Close Order
 											</button>
 											<button
 												type="button"
 												role="menuitem"
-												class="staff-status-menu-cancel"
+												class="staff-status-menu-duplicate"
 												disabled={actionsLocked}
-												on:click={cancelOrder}
+												on:click={duplicateOrder}
 											>
-												Cancel Order
+												Duplicate Order
 											</button>
 										</div>
 									{/if}
@@ -1560,22 +1589,31 @@
 											>
 												Re-Open Order
 											</button>
+											<button
+												type="button"
+												role="menuitem"
+												class="staff-status-menu-duplicate staff-status-menu-divider"
+												disabled={actionsLocked}
+												on:click={duplicateOrder}
+											>
+												Duplicate Order
+											</button>
 										</div>
 									{/if}
 								</div>
-							{:else if isRefunded}
+							{:else if isClosedOnly}
 								<div class="staff-status-menu-wrap">
 									<button
 										type="button"
 										class="staff-status-trigger"
-										data-status="refunded"
+										data-status="closed"
 										class:open={statusMenuOpen}
 										disabled={actionsLocked}
 										aria-expanded={statusMenuOpen}
 										aria-haspopup="menu"
 										on:click={toggleStatusMenu}
 									>
-										<span>Refunded</span>
+										<span>Closed</span>
 										<span class="staff-paid-caret" aria-hidden="true"></span>
 									</button>
 									{#if statusMenuOpen}
@@ -1595,40 +1633,14 @@
 											>
 												Re-Open Order
 											</button>
-										</div>
-									{/if}
-								</div>
-							{:else if isCanceled}
-								<div class="staff-status-menu-wrap">
-									<button
-										type="button"
-										class="staff-status-trigger"
-										data-status="canceled"
-										class:open={statusMenuOpen}
-										disabled={actionsLocked}
-										aria-expanded={statusMenuOpen}
-										aria-haspopup="menu"
-										on:click={toggleStatusMenu}
-									>
-										<span>Canceled</span>
-										<span class="staff-paid-caret" aria-hidden="true"></span>
-									</button>
-									{#if statusMenuOpen}
-										<button
-											type="button"
-											class="staff-paid-menu-backdrop"
-											aria-label="Close status menu"
-											on:click={closeStatusMenu}
-										></button>
-										<div class="staff-paid-menu" role="menu">
 											<button
 												type="button"
 												role="menuitem"
-												class="staff-status-menu-back"
+												class="staff-status-menu-duplicate staff-status-menu-divider"
 												disabled={actionsLocked}
-												on:click={reopenClosedOrder}
+												on:click={duplicateOrder}
 											>
-												Re-Open Order
+												Duplicate Order
 											</button>
 										</div>
 									{/if}
@@ -1691,20 +1703,6 @@
 							<p class="staff-muted">{selectedOrder.email}</p>
 						</div>
 					</div>
-
-					{#if canReopenClosed && selectedOrder.closedReason === 'other'}
-						<div class="staff-closed-block" role="group" aria-label="Re-open closed order">
-							<p class="staff-prepare-hint">Re-open sets the order back to Paid.</p>
-							<button
-								type="button"
-								class="staff-prepare-btn"
-								disabled={actionsLocked}
-								on:click={reopenClosedOrder}
-							>
-								Re-open
-							</button>
-						</div>
-					{/if}
 
 					{#if selectedOrder.status === 'invoiced' && !selectedOrder.merchTableOrder}
 						<div class="staff-notify-block">

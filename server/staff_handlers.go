@@ -64,6 +64,10 @@ type orderJSON struct {
 	ClosedReason         *string            `json:"closedReason"`
 	ClosedReasonOther    *string            `json:"closedReasonOther"`
 	History              []historyEntryJSON `json:"history"`
+	ShopifyDraftOrderID  *string            `json:"shopifyDraftOrderId"`
+	ShopifyInvoiceURL    *string            `json:"shopifyInvoiceUrl"`
+	ShopifyOrderID       *string            `json:"shopifyOrderId"`
+	PaidAmountCents      *int               `json:"paidAmountCents"`
 }
 
 type staffOrderInput struct {
@@ -99,6 +103,14 @@ func nullStr(v sql.NullString) *string {
 
 func strPtr(s string) *string { return &s }
 
+func nullInt(v sql.NullInt64) *int {
+	if !v.Valid {
+		return nil
+	}
+	n := int(v.Int64)
+	return &n
+}
+
 // orderFromRow serialize an order row with items and history
 func (s *appServer) orderFromRow(ctx context.Context, row *orderRow, withChildren bool) (*orderJSON, error) {
 	order := &orderJSON{
@@ -121,6 +133,10 @@ func (s *appServer) orderFromRow(ctx context.Context, row *orderRow, withChildre
 		ClosedReason:         nullStr(row.ClosedReason),
 		ClosedReasonOther:    nullStr(row.ClosedReasonOther),
 		History:              []historyEntryJSON{},
+		ShopifyDraftOrderID:  nullStr(row.ShopifyDraftOrderID),
+		ShopifyInvoiceURL:    nullStr(row.ShopifyInvoiceURL),
+		ShopifyOrderID:       nullStr(row.ShopifyOrderID),
+		PaidAmountCents:      nullInt(row.PaidAmountCents),
 	}
 
 	if withChildren {
@@ -328,19 +344,17 @@ func (s *appServer) handleCreateStaffOrder(w http.ResponseWriter, r *http.Reques
 	input.SubmittedByStaffName = strings.TrimSpace(input.SubmittedByStaffName)
 
 	switch {
-	case input.OrderID == "":
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "orderId is required."})
-		return
 	case len(input.Items) == 0:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Order has no items."})
 		return
 	}
 
+
 	ctx := r.Context()
-	if _, err := s.db.getOrderByID(ctx, input.OrderID); err == nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("Order %s already exists.", input.OrderID)})
-		return
-	}
+	// if _, err := s.db.getOrderByID(ctx, input.OrderID); err == nil {
+	// 	writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("Order %s already exists.", input.OrderID)})
+	// 	return
+	// }
 
 	subtotal := 0
 	for _, item := range input.Items {
@@ -376,7 +390,7 @@ func (s *appServer) handleCreateStaffOrder(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	created, err := s.db.getOrderByID(ctx, input.OrderID)
+	created, err := s.db.getOrderByID(ctx, order.OrderID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load the order."})
 		return
@@ -404,6 +418,7 @@ type statusRequest struct {
 	ClosedReasonOther   *string `json:"closedReasonOther"`
 	PaidReason          *string `json:"paidReason"`
 	NotificationChannel *string `json:"notificationChannel"`
+	PaidAmountCents     *int    `json:"paidAmountCents"`
 }
 
 func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
@@ -474,6 +489,10 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "A paid reason is required."})
 			return
 		}
+		if req.PaidAmountCents != nil && (*req.PaidAmountCents < 0 || *req.PaidAmountCents > 10_000_00) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Out of range(0<>10,000,00): PaidAmountCents."})
+			return
+		}
 		summary = statusSummary(fromStatus, toStatus, nil, req.PaidReason)
 	}
 	if toStatus == "notified" {
@@ -521,8 +540,12 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 			sets = append(sets, "paid_reason = $"+strconv.Itoa(len(args)+1), "paid_reason_other = NULL")
 			args = append(args, *reason)
 		}
+		if req.PaidAmountCents != nil {
+			sets = append(sets, "paid_amount_cents = $"+strconv.Itoa(len(args)+1))
+			args = append(args, *req.PaidAmountCents)
+		}
 	case "new", "prepared", "invoiced", "notified":
-		sets = append(sets, "paid_reason = NULL", "paid_reason_other = NULL")
+		sets = append(sets, "paid_reason = NULL", "paid_reason_other = NULL", "paid_amount_cents = NULL")
 	}
 
 	if toStatus == "notified" {
@@ -545,6 +568,24 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 	if toStatus == "closed" && *req.ClosedReason == "canceled" {
 		if err := s.db.clearOrderFulfillment(ctx, row.RowID); err != nil {
 			log.Printf("clear fulfillment failed: %v", err)
+		}
+	}
+
+	// when order is marked paid with cash, pos, paypal
+	//   convert the shopify draft into a real paid order
+	//   shortcut to automate having to do this in shopify admin
+	if toStatus == "paid" && s.shopify != nil && row.ShopifyDraftOrderID.Valid {
+		orderGID, err := s.shopify.completeDraftOrder(ctx, row.ShopifyDraftOrderID.String)
+		if err != nil {
+			log.Printf("complete draft order failed for %s: %v", row.OrderID, err)
+			writeJSON(w, http.StatusBadGateway, map[string]string{
+				"error": "Order marked paid in db, completing the Shopify draft failed. [see shopify api logs]"})
+			return
+		}
+		if orderGID != "" {
+			if err := s.db.setShopifyOrderID(ctx, row.RowID, orderGID); err != nil {
+				log.Printf("record shopify order id failed for %s: %v", row.OrderID, err)
+			}
 		}
 	}
 
@@ -774,7 +815,43 @@ func (s *appServer) handleSendInvoice(w http.ResponseWriter, r *http.Request) {
 	actor := staffUserFrom(r).DisplayName
 
 	// @TODO send real Shopify API requests to create and email invoices
+	description, totalCents, err := buildInvoiceLines(ctx, s, row)
+	if err != nil {
+		log.Printf("build invoice lines failed: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not build the invoice."})
+		return
+	}
+
+	// @TODO add shopify api retries on error
 	invoiceID := fmt.Sprintf("SH-%s-%05d", regexp.MustCompile(`\W`).ReplaceAllString(row.OrderID, ""), time.Now().Unix()%100000)
+	invoiceURL := ""
+	draftOrderGID := ""
+
+	if s.shopify == nil {
+		log.Printf("shopify not configured, using stub invoice for %s", row.OrderID)
+	} else {
+		draft, err := s.shopify.createDraftOrder(ctx, shopifyDraftRequest{
+			Email:       row.Email,
+			Note:        description,
+			OrderNumber: row.OrderID,
+			LineTitle:   fmt.Sprintf("Artist Colony Order %s", row.OrderID),
+			PriceCents:  totalCents,
+		})
+		if err != nil {
+			log.Printf("create draft order failed for %s: %v", row.OrderID, err)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Shopify rejected create invoice request."})
+			return
+		}
+		if err := s.shopify.sendDraftOrderInvoice(ctx, draft.ID, row.Email,
+			fmt.Sprintf("Artist Colony Order %s", row.OrderID), description); err != nil {
+			log.Printf("send draft order invoice failed for %s: %v", row.OrderID, err)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Draft order created but the invoice email failed"})
+			return
+		}
+		invoiceID = shopifyDraftOrderNumber(draft.ID)
+		invoiceURL = draft.InvoiceURL
+		draftOrderGID = draft.ID
+	}
 
 	history := []historyInsert{{
 		Kind: "invoice", Summary: fmt.Sprintf("Sent invoice (%s)", invoiceID),
@@ -783,22 +860,19 @@ func (s *appServer) handleSendInvoice(w http.ResponseWriter, r *http.Request) {
 		Kind: "status", Summary: statusSummary("prepared", "invoiced", nil, nil),
 		FromStatus: strPtr("prepared"), ToStatus: strPtr("invoiced"), StaffName: actor,
 	}}
-	finalStatus := "invoiced"
 	channel := ""
 	if row.MerchTableOrder {
 		history = append(history, historyInsert{
 			Kind: "status", Summary: notificationSummary("in_person"),
 			FromStatus: strPtr("invoiced"), ToStatus: strPtr("notified"), StaffName: actor,
 		})
-		finalStatus = "notified"
 		channel = "in_person"
 	}
-	_ = finalStatus
 
-	sets := []string{"shopify_invoice_id = $1", "status = $2", "notification_channel = NULL"}
-	args := []any{invoiceID, "invoiced"}
+	sets := []string{"shopify_invoice_id = $1", "shopify_draft_order_id = NULLIF($2, '')", "shopify_invoice_url = NULLIF($3, '')", "status = $4", "notification_channel = NULL"}
+	args := []any{invoiceID, draftOrderGID, invoiceURL, "invoiced"}
 	if channel != "" {
-		sets = []string{"shopify_invoice_id = $1", "status = $2", "notification_channel = $3"}
+		sets = []string{"shopify_invoice_id = $1", "shopify_draft_order_id = NULLIF($2, '')", "shopify_invoice_url = NULLIF($3, '')", "status = $4", "notification_channel = $5"}
 		args = append(args, channel)
 	}
 	if err := s.db.updateOrderFields(ctx, row.RowID, strings.Join(sets, ", "), args, history); err != nil {
@@ -943,8 +1017,8 @@ func (s *appServer) handleListInventory(w http.ResponseWriter, r *http.Request) 
 		}
 		if q != "" {
 			haystack := strings.ToLower(strings.Join([]string{
-					item.ProductCode, item.Title, item.ShopName, item.ArtistName,
-					item.ItemType, item.ProductDisplay, item.Notes}, " "))
+				item.ProductCode, item.Title, item.ShopName, item.ArtistName,
+				item.ItemType, item.ProductDisplay, item.Notes}, " "))
 			if !strings.Contains(haystack, q) {
 				continue
 			}

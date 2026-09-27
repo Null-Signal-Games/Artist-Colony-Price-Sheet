@@ -75,8 +75,8 @@ _set uid/gid, the directory needs owner permissions_
 ```fish
 docker run --rm \
   --network ac-dev \
+  --env-file .env \
   -e DB_CONNECTION_STRING="postgres://postgres:$POSTGRES_PASSWORD@ac-dev-db:5432/artist-colony-orders?sslmode=disable" \
-  -e ALLOWED_ORIGIN=http://localhost:5173 \
   -p 8080:8080 \
   local/artist-colony-orders:dev
 ```
@@ -127,3 +127,14 @@ npm run build
 ```
 
 You can preview the production build with `npm run preview`.
+
+## Shopify API Setup
+
+Create a shopify App with these scopes:
+
+- write_draft_orders
+- read_draft_orders
+- read_orders
+- write_orders
+
+Then Install the app into the store, it will be "untrusted" install anyway, no oauth or callback urls needed

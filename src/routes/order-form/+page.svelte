@@ -114,7 +114,7 @@
 					},
 					{ staffName }
 				);
-				void submitOrderToServer({
+				/* void submitOrderToServer({
 					orderId: order.orderId,
 					name,
 					discordHandle,
@@ -124,7 +124,7 @@
 					submittedAt: new Date().toISOString(),
 					submittedByStaffName: staffName,
 					...(merchTableOrder ? { merchTableOrder: true } : {})
-				});
+				}); */
 				cart.clear();
 				await goto(`/staff?order=${encodeURIComponent(order.orderId)}`);
 				return;

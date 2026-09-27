@@ -143,6 +143,10 @@ export type Order = {
 	closedReason?: ClosedReason | null;
 	closedReasonOther?: string | null;
 	history: OrderHistoryEntry[];
+	shopifyDraftOrderId?: string | null;
+	shopifyInvoiceUrl?: string | null;
+	shopifyOrderId?: string | null;
+	paidAmountCents?: number | null;
 };
 
 export type OrderHistoryKind =
@@ -172,6 +176,7 @@ export type SendInvoiceResult = {
 	order: Order;
 	invoiceId: string;
 	message: string;
+	invoiceUrl?: string;
 };
 
 export type OrderSummary = Omit<Order, 'items' | 'history'>;
@@ -190,6 +195,7 @@ export type UpdateOrderStatusOptions = StaffActionMeta & {
 	paidReason?: PaidReason;
 	paidReasonOther?: string;
 	notificationChannel?: NotificationChannel;
+	paidAmountCents?: number;
 };
 
 export type InventoryItem = {

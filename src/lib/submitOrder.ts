@@ -29,7 +29,8 @@ function toFormattedItems(items: CartItem[]) {
 
 export function buildOrderId(date = new Date(), options?: { merchTableOrder?: boolean }) {
 	const n = String(date.getTime() % 10000).padStart(4, '0');
-	const id = `W26-${n}`;
+	const suffix = String(Math.floor(Math.random() * 36 * 36)).padStart(2, '0');
+	const id = `W26-${n}${suffix}`;
 	return options?.merchTableOrder ? `${id}M` : id;
 }
 

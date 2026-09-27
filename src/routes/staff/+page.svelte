@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
 	import { get } from 'svelte/store';
+	import { env } from '$env/dynamic/public';
 
 	import {
 		CLOSED_REASON_LABELS,
@@ -328,8 +329,9 @@
 					: status === 'paid'
 						? {
 								...meta,
-								paidReason
-							}
+								paidReason,
+								paidAmountCents: collectedTotalCents(selectedOrder)
+						  }
 						: status === 'notified'
 							? {
 									...meta,
@@ -461,6 +463,13 @@
 	}
   */
 
+	function collectedTotalCents(order: Order) {
+		return order.items.reduce(
+			(sum, item) => sum + effectiveOrderItemQuantity(item) * item.unitPriceCents,
+			0
+		);
+	}
+
 	$: allLinesReadyForPrepare = selectedOrder
 		? selectedOrder.items.length > 0 && selectedOrder.items.every(isLineReadyForPrepare)
 		: false;
@@ -470,6 +479,30 @@
 	$: paidMethodLabel = selectedOrder?.paidReason
 		? PAID_REASON_LABELS[selectedOrder.paidReason]
 		: 'Paid';
+
+	$: paidAmountLabel =
+		selectedOrder?.paidAmountCents != null
+			? formatCents(selectedOrder.paidAmountCents)
+			: null;
+
+	// use subdomain for links to shopify admin
+	const SHOPIFY_STORE_ID = (env.PUBLIC_SHOPIFY_STORE_SUBDOMAIN ?? '').trim();
+
+	function shopifyGidId(gid: string | null | undefined) {
+		if (!gid) return '';
+		const parts = gid.split('/');
+		return parts[parts.length - 1] ?? '';
+	}
+
+	$: shopifyOrderLink =
+		SHOPIFY_STORE_ID && selectedOrder?.shopifyOrderId
+			? `https://admin.shopify.com/store/${SHOPIFY_STORE_ID}/orders/${shopifyGidId(selectedOrder.shopifyOrderId)}`
+			: null;
+
+	$: shopifyDraftLink =
+		SHOPIFY_STORE_ID && selectedOrder?.shopifyDraftOrderId
+			? `https://admin.shopify.com/store/${SHOPIFY_STORE_ID}/draft_orders/${shopifyGidId(selectedOrder.shopifyDraftOrderId)}`
+			: null;
 
 	$: canReopenClosed =
 		!!selectedOrder && selectedOrder.status === 'closed';
@@ -1443,7 +1476,7 @@
 										aria-haspopup="menu"
 										on:click={togglePaidMenu}
 									>
-										<span>{paidMethodLabel}</span>
+										<span>{paidMethodLabel}{paidAmountLabel ? ` · ${paidAmountLabel}` : ''}</span>
 										<span class="staff-paid-caret" aria-hidden="true"></span>
 									</button>
 									{#if paidMenuOpen}
@@ -1617,15 +1650,32 @@
 										>{/if}
 								</h2>
 								{#if selectedOrder.shopifyInvoiceId}
-									<span
-										class="staff-shopify-order"
-										class:paid={selectedOrder.status === 'paid' ||
-											(selectedOrder.status === 'closed' &&
-												selectedOrder.closedReason === 'picked_up')}
-										title="Shopify order"
-									>
-										{selectedOrder.shopifyInvoiceId}
-									</span>
+									{#if shopifyOrderLink || shopifyDraftLink}
+										<a
+											class="staff-shopify-order"
+											class:paid={selectedOrder.status === 'paid' ||
+												(selectedOrder.status === 'closed' &&
+													selectedOrder.closedReason === 'picked_up')}
+											href={shopifyOrderLink ?? shopifyDraftLink}
+											target="_blank"
+											rel="noreferrer"
+											title={shopifyOrderLink
+												? 'Open Shopify Order'
+												: 'Open Shopify Draft Order'}
+										>
+											{selectedOrder.shopifyInvoiceId}
+										</a>
+									{:else}
+										<span
+											class="staff-shopify-order"
+											class:paid={selectedOrder.status === 'paid' ||
+												(selectedOrder.status === 'closed' &&
+													selectedOrder.closedReason === 'picked_up')}
+											title="Shopify order"
+										>
+											{selectedOrder.shopifyInvoiceId}
+										</span>
+									{/if}
 								{/if}
 							</div>
 							<p class="staff-muted">

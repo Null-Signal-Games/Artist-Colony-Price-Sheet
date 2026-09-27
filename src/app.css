@@ -3069,6 +3069,15 @@ table tbody tr.notes-only-row.stripe-alt,
 	color: #111111;
 }
 
+a.staff-shopify-order {
+	text-decoration: none;
+	cursor: pointer;
+}
+
+a.staff-shopify-order:hover {
+	background: #f3f4f6;
+}
+
 .staff-paid-menu-wrap {
 	position: relative;
 	display: flex;

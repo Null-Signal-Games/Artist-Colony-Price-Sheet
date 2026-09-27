@@ -45,6 +45,12 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS closed_reason_other TEXT;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS collected BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS line_action TEXT NOT NULL DEFAULT '';
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS collected_quantity INTEGER;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_draft_order_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_invoice_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_paid_checked_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_order_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_amount_cents INTEGER;
+CREATE INDEX IF NOT EXISTS idx_orders_shopify_draft_order_id ON orders(shopify_draft_order_id);
 CREATE TABLE IF NOT EXISTS staff_users (
   id SERIAL PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
@@ -122,12 +128,19 @@ func (s *store) insertOrder(sub *orderSubmission, computed []computedItem, subto
 	var orderRowID int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO orders (order_id, name, discord_handle, email, subtotal_cents, submitted_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5)
 		RETURNING id`,
-		sub.OrderID, sub.Name, sub.DiscordHandle, sub.Email, subtotalCents, sub.SubmittedAt).Scan(&orderRowID)
+		sub.Name, sub.DiscordHandle, sub.Email, subtotalCents, sub.SubmittedAt).Scan(&orderRowID)
 	if err != nil {
 		return 0, err
 	}
+
+	// use sequential table row id to create AC Order number
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE orders SET order_id = 'W26-' || id WHERE id = $1::bigint`, orderRowID); err != nil {
+		return 0, err
+	}
+	sub.OrderID = fmt.Sprintf("W26-%d", orderRowID)
 
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO order_items

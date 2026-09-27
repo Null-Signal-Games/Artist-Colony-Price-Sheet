@@ -136,13 +136,19 @@ type orderRow struct {
 	PaidReasonOther      sql.NullString
 	ClosedReason         sql.NullString
 	ClosedReasonOther    sql.NullString
+	ShopifyDraftOrderID  sql.NullString
+	ShopifyInvoiceURL    sql.NullString
+	ShopifyOrderID       sql.NullString
+	PaidAmountCents      sql.NullInt64
 }
 
 const orderColumns = `
 	o.id, o.order_id, o.name, o.discord_handle, o.email, o.subtotal_cents,
 	o.submitted_at, o.created_at, o.status, o.staff_notes,
 	o.submitted_by_staff_name, o.merch_table_order, o.notification_channel,
-	o.shopify_invoice_id, o.paid_reason, o.paid_reason_other,
+	o.shopify_invoice_id, o.shopify_draft_order_id, o.shopify_invoice_url, o.shopify_order_id,
+	o.paid_reason, o.paid_reason_other,
+	o.paid_amount_cents,
 	o.closed_reason, o.closed_reason_other`
 
 func scanOrderRow(scan func(...any) error) (*orderRow, error) {
@@ -150,7 +156,9 @@ func scanOrderRow(scan func(...any) error) (*orderRow, error) {
 	err := scan(&o.RowID, &o.OrderID, &o.Name, &o.DiscordHandle, &o.Email,
 		&o.SubtotalCents, &o.SubmittedAt, &o.CreatedAt, &o.Status, &o.StaffNotes,
 		&o.SubmittedByStaffName, &o.MerchTableOrder, &o.NotificationChannel,
-		&o.ShopifyInvoiceID, &o.PaidReason, &o.PaidReasonOther,
+		&o.ShopifyInvoiceID, &o.ShopifyDraftOrderID, &o.ShopifyInvoiceURL, &o.ShopifyOrderID,
+		&o.PaidReason, &o.PaidReasonOther,
+		&o.PaidAmountCents,
 		&o.ClosedReason, &o.ClosedReasonOther)
 	if err != nil {
 		return nil, err
@@ -307,12 +315,23 @@ func (s *store) insertStaffOrder(ctx context.Context, input staffOrderInput, ord
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO orders (order_id, name, discord_handle, email, subtotal_cents, submitted_at,
 			status, staff_notes, submitted_by_staff_name, merch_table_order)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, '', $8, $9)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, '', $7, $8)
 		RETURNING id`,
-		order.OrderID, order.Name, order.DiscordHandle, order.Email, order.SubtotalCents,
+		order.Name, order.DiscordHandle, order.Email, order.SubtotalCents,
 		order.SubmittedAt, order.Status, nullIfEmpty(input.SubmittedByStaffName),
 		order.MerchTableOrder).Scan(&order.RowID)
 	if err != nil {
+		return err
+	}
+
+	// sets AC Order ID to table row ID
+	if order.MerchTableOrder {
+		order.OrderID = fmt.Sprintf("W26-%dM", order.RowID)
+	} else {
+		order.OrderID = fmt.Sprintf("W26-%d", order.RowID)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE orders SET order_id = $1::text WHERE id = $2::bigint`, order.OrderID, order.RowID); err != nil {
 		return err
 	}
 
@@ -413,6 +432,73 @@ func (s *store) clearOrderFulfillment(ctx context.Context, orderRowID int64) err
 		UPDATE order_items SET collected = FALSE, line_action = '', collected_quantity = NULL
 		WHERE order_id = $1`, orderRowID)
 	return err
+}
+
+// orders waiting on a Shopify payment scanned using Draft order id
+func (s *store) listOrdersByShopifyDraftID(ctx context.Context) ([]orderRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+orderColumns+` FROM orders o
+		WHERE o.shopify_draft_order_id IS NOT NULL AND o.status IN ('invoiced', 'notified')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []orderRow
+	for rows.Next() {
+		o, err := scanOrderRow(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *o)
+	}
+	return out, rows.Err()
+}
+
+// setShopifyOrderID records real Shopify order gid when the draft is completed
+func (s *store) setShopifyOrderID(ctx context.Context, orderRowID int64, orderGID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE orders SET shopify_order_id = $1::text WHERE id = $2::bigint`, orderGID, orderRowID)
+	return err
+}
+
+// markOrderPaidByShopify flips an order to paid once shopify confirms payment
+//   orders paid with Shopify can't be undone
+//   @TODO make sure client state machine matches this constraint
+func (s *store) markOrderPaidByShopify(ctx context.Context, orderRowID int64, fromStatus string, paidAmountCents *int, shopifyOrderGID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var amount any
+	if paidAmountCents != nil {
+		amount = *paidAmountCents
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE orders SET status = 'paid', paid_reason = 'shopify', paid_reason_other = NULL,
+			paid_amount_cents = $2, shopify_order_id = COALESCE($3::text, shopify_order_id),
+			shopify_paid_checked_at = NOW()
+		WHERE id = $1 AND status IN ('invoiced', 'notified')`, orderRowID, amount, shopifyOrderGID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+
+	summary := statusSummary(fromStatus, "paid", nil, strPtr("shopify"))
+	if err := s.insertHistory(ctx, tx, orderRowID, historyInsert{
+		Kind:       "status",
+		Summary:    summary,
+		FromStatus: strPtr(fromStatus),
+		ToStatus:   strPtr("paid"),
+		StaffName:  "Shopify Poller",
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *store) listSoldOutOverrides(ctx context.Context) (map[string]bool, error) {

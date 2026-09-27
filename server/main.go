@@ -54,6 +54,7 @@ type appServer struct {
 	inventoryItemsByID   map[string]inventoryItemJSON
 	inventoryMu          sync.Mutex
 	staffSessionTTLHours int
+	shopify              *shopifyClient
 }
 
 func jsonDecode(r *http.Request, v any) error {
@@ -83,7 +84,7 @@ func priceCents(value string) (int, bool) {
 
 // loadInventoryPrices loads the authoritative data source,
 // ignore known unit prices from client unless we don't have the product code
-//   could be loaded in frontend before backend catches up
+//	could be loaded in frontend before backend catches up
 func loadInventoryPrices(path string) (map[string]int, []inventoryItemJSON, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -253,9 +254,6 @@ func (s *appServer) handleOrder(w http.ResponseWriter, r *http.Request) {
 	sub.OrderID = strings.TrimSpace(sub.OrderID)
 	sub.SubmittedAt = strings.TrimSpace(sub.SubmittedAt)
 
-	if sub.OrderID == "" {
-		sub.OrderID = fmt.Sprintf("W26-%d", time.Now().UnixMilli())
-	}
 	if sub.SubmittedAt == "" {
 		sub.SubmittedAt = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -361,15 +359,23 @@ func main() {
 		inventoryItems:       items,
 		inventoryItemsByID:   make(map[string]inventoryItemJSON, len(items)),
 		staffSessionTTLHours: ttlHours,
+		shopify:              newShopifyClientFromEnv(),
 	}
 	for _, item := range items {
 		s.inventoryItemsByID[item.ID] = item
+	}
+	if s.shopify == nil {
+		log.Printf("⚠️ shopify not configured. /send-invoice will be stubbed out")
+	} else {
+		log.Printf("✅ shopify enabled: %s", s.shopify.domain)
 	}
 
 	ctx := context.Background()
 	if err := s.db.seedStaffUsers(ctx); err != nil {
 		log.Fatalf("seed staff users: %v", err)
 	}
+
+	s.startShopifyPoller(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /order", s.handleOrder)

@@ -373,9 +373,6 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /order", s.handleOrder)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
 
 	mux.HandleFunc("POST /staff/login", s.handleStaffLogin)
 	mux.HandleFunc("POST /staff/logout", s.handleStaffLogout)
@@ -392,6 +389,12 @@ func main() {
 	staffMux.HandleFunc("GET /staff/inventory", s.handleListInventory)
 	staffMux.HandleFunc("PATCH /staff/inventory/{id}/sold-out", s.handleSetSoldOut)
 	mux.Handle("/staff/", s.staffAuthMiddleware(staffMux))
+
+	// no auth required
+	mux.HandleFunc("GET /sold-out", s.handlePublicSoldOut)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
 
 	addr := ":" + port
 	log.Printf("order server listening on %s", addr)

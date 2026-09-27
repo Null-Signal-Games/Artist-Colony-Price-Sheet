@@ -6,6 +6,7 @@
 	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
 	import { shopPromoDetails } from '$lib/artistDetails';
 	import { isStaffSession } from '$lib/staff/staffIdentity';
+	import { soldOutIds, startSoldOutSync } from '$lib/soldOut';
 
 	export let data: {
 		lastUpdated: string;
@@ -59,8 +60,16 @@
 		return (row[productDisplayKey] ?? '').trim().toLowerCase() === 'artist display';
 	}
 
-	function isSoldOutItem(row: { [key: string]: string }) {
+	function isTitleSoldOut(row: { [key: string]: string }) {
 		return /sold out/i.test(row[productTitleKey] ?? '');
+	}
+
+	$: soldOutFlags = new Map(
+		data.csvData.map((row) => [row, isTitleSoldOut(row) || $soldOutIds.has(rowId(row))])
+	);
+
+	function isSoldOutItem(row: { [key: string]: string }) {
+		return soldOutFlags.get(row) ?? false;
 	}
 
 	function isNotesOnlyItem(row: { [key: string]: string }) {
@@ -70,7 +79,7 @@
 	}
 
 	function canAddToCart(row: { [key: string]: string }) {
-		if (isNotesOnlyItem(row) || isSoldOutItem(row)) return false;
+    if (isNotesOnlyItem(row) || isSoldOutItem(row)) return false;
 		if (isArtistDisplayItem(row)) return true;
 		return staffSession && isMerchTableItem(row);
 	}
@@ -201,6 +210,7 @@
 		const header = document.querySelector('.fixed-container');
 		const columnHeader = document.querySelector('.fixed-header');
 		updateArtistStickyState();
+		void startSoldOutSync();
 
 		const observer = new ResizeObserver(updateArtistStickyState);
 		if (header) observer.observe(header);

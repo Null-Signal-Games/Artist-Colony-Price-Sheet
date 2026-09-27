@@ -68,6 +68,7 @@
 
 	let inventoryQuery = '';
 	let inventory: InventoryItem[] = [];
+	let savingSoldOutId = '';
 
 	let menuOpen = false;
 	let statusFilterOpen = false;
@@ -875,6 +876,20 @@
 
 	function orderIdHasMerchSuffix(orderId: string, merchTableOrder?: boolean) {
 		return Boolean(merchTableOrder && orderId.endsWith('M'));
+	}
+
+	async function toggleSoldOut(item: InventoryItem) {
+		if (savingSoldOutId) return;
+		savingSoldOutId = item.id;
+		error = '';
+		try {
+			const updated = await staffApi.setProductSoldOut(item.id, !item.soldOut);
+			inventory = inventory.map((entry) => (entry.id === updated.id ? updated : entry));
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update sold-out state.';
+		} finally {
+			savingSoldOutId = '';
+		}
 	}
 </script>
 
@@ -1922,6 +1937,18 @@
 								<span>{item.productDisplay}</span>
 								<span>Qty {item.quantity == null ? '—' : item.quantity}</span>
 							</div>
+							<button
+								type="button"
+								class="staff-confirm-btn staff-sold-out-toggle"
+								disabled={savingSoldOutId === item.id}
+								on:click={() => toggleSoldOut(item)}
+							>
+								{savingSoldOutId === item.id
+									? 'Saving…'
+									: item.soldOut
+										? 'Mark Available'
+										: 'Mark Sold Out'}
+							</button>
 						</li>
 					{/each}
 				</ul>

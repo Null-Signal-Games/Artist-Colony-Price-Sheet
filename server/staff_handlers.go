@@ -987,3 +987,28 @@ func (s *appServer) handleSetSoldOut(w http.ResponseWriter, r *http.Request) {
 	updated.SoldOut = body.SoldOut
 	writeJSON(w, http.StatusOK, updated)
 }
+
+// public (no auth)
+// returns ids of items that are sold out
+func (s *appServer) handlePublicSoldOut(w http.ResponseWriter, r *http.Request) {
+	s.inventoryMu.Lock()
+	items := make([]inventoryItemJSON, len(s.inventoryItems))
+	copy(items, s.inventoryItems)
+	s.inventoryMu.Unlock()
+
+	overrides := s.soldOutOverrides(r.Context())
+
+	out := make([]string, 0)
+	for _, item := range items {
+		soldOut := item.SoldOut
+		if override, ok := overrides[item.ID]; ok {
+			soldOut = override
+		}
+		if soldOut {
+			out = append(out, item.ID)
+		}
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, out)
+}

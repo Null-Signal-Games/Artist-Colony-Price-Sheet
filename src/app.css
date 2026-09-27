@@ -4224,6 +4224,13 @@ table tbody tr.notes-only-row.stripe-alt,
 	color: #8a0054;
 }
 
+.staff-sold-out-toggle {
+	margin-top: 10px;
+	min-height: 36px;
+	padding: 8px 12px;
+	font-size: 0.9em;
+}
+
 @media (min-width: 640px) {
 	.staff-status-filter {
 		max-width: 260px;

@@ -2975,6 +2975,71 @@ table tbody tr.notes-only-row.stripe-alt,
 	line-height: 1.4;
 }
 
+.staff-sync-notice {
+	flex-shrink: 0;
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 6px 10px;
+	margin: 0;
+	padding: 10px 12px;
+	background: #f8f9fa;
+	border: 0;
+	border-bottom: 1px solid #dee2e6;
+	color: #495057;
+	font-weight: 500;
+	font-size: 14px;
+	line-height: 1.4;
+}
+
+.staff-sync-refresh {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #2f9e44;
+	font: inherit;
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	cursor: pointer;
+}
+
+.staff-sync-refresh:hover:not(:disabled) {
+	color: #087f5b;
+}
+
+.staff-sync-refresh:disabled {
+	opacity: 0.55;
+	cursor: wait;
+}
+
+.staff-paid-syncing {
+	margin-bottom: 16px;
+}
+
+.staff-paid-sync-spinner {
+	width: 28px;
+	height: 28px;
+	margin: 0 auto 18px;
+	border: 3px solid #e9ecef;
+	border-top-color: #2f9e44;
+	border-radius: 50%;
+	animation: staff-paid-spin 0.8s linear infinite;
+}
+
+@keyframes staff-paid-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.staff-confirm-backdrop:disabled {
+	cursor: wait;
+}
+
 .staff-split {
 	display: grid;
 	grid-template-columns: 1fr;

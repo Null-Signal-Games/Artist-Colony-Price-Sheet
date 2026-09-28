@@ -60,6 +60,8 @@
 	let loading = true;
 	let saving = false;
 	let error = '';
+	let syncNotice = '';
+	let syncRefreshing = false;
 
 	let statusChecks = defaultStatusChecks(true);
 	let orderSort: OrderSort = 'oldest';
@@ -320,6 +322,7 @@
 		partialQtyEditingIndex = null;
 		partialQtyDraft = '';
 		discordNotifyOpen = false;
+		syncNotice = '';
 		try {
 			selectedOrder = await staffApi.getOrder(orderId);
 			if (!selectedOrder) {
@@ -360,6 +363,8 @@
 		partialQtyEditingIndex = null;
 		partialQtyDraft = '';
 		discordNotifyOpen = false;
+		error = '';
+		syncNotice = '';
 	}
 
 	async function setStatus(
@@ -377,12 +382,13 @@
 		saving = true;
 		error = '';
 		invoiceSuccess = '';
+		const orderId = selectedOrder.orderId;
 		try {
 			const closedReason = options.closedReason ?? 'closed';
 			const paidReason = options.paidReason ?? 'cash';
 			const meta = staffMeta();
 			selectedOrder = await staffApi.updateOrderStatus(
-				selectedOrder.orderId,
+				orderId,
 				status,
 				status === 'closed'
 					? { ...meta, closedReason }
@@ -405,7 +411,23 @@
 			);
 			await refreshOrdersList();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to update status.';
+			const message = err instanceof Error ? err.message : 'Failed to update status.';
+			if (status === 'paid') {
+				try {
+					const refreshed = await staffApi.getOrder(orderId);
+					if (refreshed) {
+						selectedOrder = refreshed;
+						notesDraft = refreshed.staffNotes ?? notesDraft;
+						await refreshOrdersList();
+					}
+				} catch {
+					/* keep previous selectedOrder */
+				}
+				error = '';
+				syncNotice = 'Order is syncing with Shopify in the background…';
+				return;
+			}
+			error = message;
 		} finally {
 			saving = false;
 		}
@@ -444,10 +466,11 @@
 	async function markPaid(
 		reason: Exclude<PaidReason, 'shopify'>,
 		paidAmountCents?: number
-	) {
-		if (!selectedOrder || actionsLocked) return;
-		if (selectedOrder.status !== 'notified') return;
+	): Promise<boolean> {
+		if (!selectedOrder || actionsLocked) return false;
+		if (selectedOrder.status !== 'notified') return false;
 		error = '';
+		syncNotice = '';
 		const amountCents = paidAmountCents ?? collectedTotalCents(selectedOrder);
 		await setStatus('paid', {
 			paidReason: reason,
@@ -460,9 +483,13 @@
 			const existing = (notesDraft || selectedOrder.staffNotes || '').trim();
 			notesDraft = existing ? `${existing}\n${paidNote}` : paidNote;
 			await flushNotesIfNeeded({ quiet: true });
+			closePaidMenu();
+			closeStatusMenu();
+			return true;
 		}
 		closePaidMenu();
 		closeStatusMenu();
+		return Boolean(syncNotice);
 	}
 
 	function parsePaidAmountToCents(raw: string): number | null {
@@ -493,6 +520,8 @@
 		if (!selectedOrder || selectedOrder.status !== 'notified' || actionsLocked) return;
 		closeStatusMenu();
 		closePaidMenu();
+		error = '';
+		syncNotice = '';
 		pendingPaidReason = reason;
 		const suggested = collectedTotalCents(selectedOrder);
 		paidAmountDraft = (suggested / 100).toFixed(2);
@@ -503,6 +532,7 @@
 	}
 
 	function closePaidAmountConfirm() {
+		if (actionsLocked) return;
 		paidAmountConfirmOpen = false;
 		pendingPaidReason = null;
 		paidAmountDraft = '';
@@ -517,10 +547,31 @@
 			return;
 		}
 		const reason = pendingPaidReason;
+		await markPaid(reason, cents);
 		paidAmountConfirmOpen = false;
 		pendingPaidReason = null;
 		paidAmountDraft = '';
-		await markPaid(reason, cents);
+	}
+
+	async function refreshOrderAfterSync() {
+		if (!selectedOrderId || syncRefreshing) return;
+		syncRefreshing = true;
+		error = '';
+		try {
+			const refreshed = await staffApi.getOrder(selectedOrderId);
+			if (refreshed) {
+				selectedOrder = refreshed;
+				notesDraft = refreshed.staffNotes ?? '';
+			}
+			await refreshOrdersList();
+			if (selectedOrder?.status === 'paid') {
+				syncNotice = '';
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to refresh order.';
+		} finally {
+			syncRefreshing = false;
+		}
 	}
 
 	async function choosePaidReason(reason: PaidReason) {
@@ -753,14 +804,14 @@
 		await setStatus('closed', { closedReason: 'picked_up' });
 	}
 
-	async function unsetPaymentType() {
+	/* async function unsetPaymentType() {
 		if (!selectedOrder || selectedOrder.status !== 'paid' || actionsLocked) return;
 		if (selectedOrder.paidReason === 'shopify') return;
 		closePaidMenu();
 		await setStatus('notified');
-	}
+	} */
 
-	async function reopenClosedOrder() {
+	/* async function reopenClosedOrder() {
 		if (!selectedOrder || actionsLocked) return;
 		if (!canReopenClosed) return;
 		const prev = statusBeforeClose(selectedOrder);
@@ -786,6 +837,7 @@
 		}
 		await setStatus(prev);
 	}
+  */
 
 	function discordNotifyMessage(order: Order) {
 		const handle = order.discordHandle.trim().replace(/^@/, '');
@@ -852,6 +904,14 @@
 			const result = await staffApi.sendInvoice(selectedOrder.orderId, staffMeta());
 			selectedOrder = result.order;
 			invoiceSuccess = result.message;
+			if (selectedOrder.merchTableOrder && selectedOrder.status === 'invoiced') {
+				selectedOrder = await staffApi.markNotified(
+					selectedOrder.orderId,
+					'in_person',
+					staffMeta()
+				);
+				invoiceSuccess = `${result.message} Marked Notified in Person.`;
+			}
 			await refreshOrdersList();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to send invoice.';
@@ -1444,6 +1504,19 @@
 
 	{#if error}
 		<p class="staff-error" role="alert">{error}</p>
+	{/if}
+	{#if syncNotice}
+		<p class="staff-sync-notice" role="status">
+			<span>{syncNotice}</span>
+			<button
+				type="button"
+				class="staff-sync-refresh"
+				disabled={syncRefreshing || actionsLocked}
+				on:click={refreshOrderAfterSync}
+			>
+				{syncRefreshing ? 'Refreshing…' : 'Refresh'}
+			</button>
+		</p>
 	{/if}
 
 	{#if tab === 'orders'}
@@ -2707,13 +2780,17 @@
 				type="button"
 				class="staff-confirm-backdrop"
 				aria-label="Cancel payment confirmation"
-				on:click={closePaidAmountConfirm}
+				disabled={actionsLocked}
+				on:click={() => {
+					if (!actionsLocked) closePaidAmountConfirm();
+				}}
 			></button>
 			<div
 				class="staff-confirm-dialog"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="staff-paid-amount-confirm-title"
+				aria-busy={actionsLocked}
 			>
 				<p
 					id="staff-paid-amount-confirm-title"
@@ -2721,30 +2798,37 @@
 				>
 					{paidConfirmTitle(pendingPaidReason)}
 				</p>
-				<p class="staff-confirm-detail">
-					{paidConfirmDetail(pendingPaidReason)}
-					{#if selectedOrder}
-						Order total is {formatCents(collectedTotalCents(selectedOrder))}.
-					{/if}
-				</p>
-				<label class="staff-cash-amount-label">
-					Amount (CAD)
-					<input
-						bind:this={paidAmountInputEl}
-						type="text"
-						inputmode="decimal"
-						autocomplete="off"
-						class="staff-cash-amount-input"
-						bind:value={paidAmountDraft}
-						disabled={actionsLocked}
-						on:keydown={(event) => {
-							if (event.key === 'Enter') {
-								event.preventDefault();
-								void confirmManualPaid();
-							}
-						}}
-					/>
-				</label>
+				{#if actionsLocked}
+					<p class="staff-confirm-detail staff-paid-syncing" role="status">
+						Marking paid and syncing with Shopify… This can take a few seconds.
+					</p>
+					<div class="staff-paid-sync-spinner" aria-hidden="true"></div>
+				{:else}
+					<p class="staff-confirm-detail">
+						{paidConfirmDetail(pendingPaidReason)}
+						{#if selectedOrder}
+							Order total is {formatCents(collectedTotalCents(selectedOrder))}.
+						{/if}
+					</p>
+					<label class="staff-cash-amount-label">
+						Amount (CAD)
+						<input
+							bind:this={paidAmountInputEl}
+							type="text"
+							inputmode="decimal"
+							autocomplete="off"
+							class="staff-cash-amount-input"
+							bind:value={paidAmountDraft}
+							disabled={actionsLocked}
+							on:keydown={(event) => {
+								if (event.key === 'Enter') {
+									event.preventDefault();
+									void confirmManualPaid();
+								}
+							}}
+						/>
+					</label>
+				{/if}
 				<div class="staff-confirm-actions staff-paid-amount-actions">
 					<button
 						type="button"
@@ -2761,7 +2845,7 @@
 						disabled={actionsLocked || parsePaidAmountToCents(paidAmountDraft) == null}
 						on:click={confirmManualPaid}
 					>
-						{paidConfirmActionLabel(pendingPaidReason)}
+						{actionsLocked ? 'Marking paid…' : paidConfirmActionLabel(pendingPaidReason)}
 					</button>
 				</div>
 			</div>

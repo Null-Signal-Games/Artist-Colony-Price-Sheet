@@ -170,7 +170,11 @@
 <div class="order-form-page">
 	<header class="order-form-header">
 		<a class="back-link" href="{base}/">← View Items</a>
-		<h1>Artist Colony</h1>
+		{#if staffSession}
+			<a class="title-staff-link" href="{base}/staff">STAFF</a>
+		{:else}
+			<h1>Artist Colony</h1>
+		{/if}
 	</header>
 
 	<main class="order-form-main">

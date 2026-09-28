@@ -85,6 +85,7 @@
 	let inventoryQuery = '';
 	let inventory: InventoryItem[] = [];
 	let savingSoldOutId = '';
+	let soldOutMenuItemId = '';
 
 	let menuOpen = false;
 	let statusFilterOpen = false;
@@ -1098,6 +1099,7 @@
 		menuOpen = false;
 		statusFilterOpen = false;
 		searchOpen = false;
+		soldOutMenuItemId = '';
 		if (next === 'inventory') await clearSelectedOrder();
 		void refresh();
 	}
@@ -1189,6 +1191,7 @@
 		if (savingSoldOutId) return;
 		savingSoldOutId = item.id;
 		error = '';
+		soldOutMenuItemId = '';
 		try {
 			const updated = await staffApi.setProductSoldOut(item.id, !item.soldOut);
 			inventory = inventory.map((entry) => (entry.id === updated.id ? updated : entry));
@@ -1197,6 +1200,15 @@
 		} finally {
 			savingSoldOutId = '';
 		}
+	}
+
+	function toggleSoldOutMenu(itemId: string) {
+		if (savingSoldOutId) return;
+		soldOutMenuItemId = soldOutMenuItemId === itemId ? '' : itemId;
+	}
+
+	function closeSoldOutMenu() {
+		soldOutMenuItemId = '';
 	}
 
 	function isMerchTableInventory(item: InventoryItem) {
@@ -1412,27 +1424,9 @@
 				</button>
 			{:else}
 				<div
-					class="staff-search-wrap"
-					class:open={searchOpen}
+					class="staff-search-wrap staff-search-wrap-inventory"
 					class:has-query={inventoryQuery.trim().length > 0}
 				>
-					<button
-						type="button"
-						class="staff-search-toggle"
-						aria-expanded={searchOpen}
-						aria-label={searchOpen ? 'Hide search' : 'Show search'}
-						on:click={toggleSearch}
-					>
-						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
-							<circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="2" />
-							<path
-								d="M16.5 16.5L20 20"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-							/>
-						</svg>
-					</button>
 					<div class="staff-search-field">
 						<input
 							class="staff-bar-search"
@@ -2412,6 +2406,7 @@
 							<col class="col-artist" />
 							<col class="col-code" />
 							<col class="col-product" />
+							<col class="col-type" />
 							<col class="col-cad" />
 							<col class="col-cart" />
 						</colgroup>
@@ -2420,6 +2415,7 @@
 								<th class="artist-col"></th>
 								<th class="product-code-col"></th>
 								<th class="product-col"></th>
+								<th class="type-col"></th>
 								<th class="cad-col"></th>
 								<th class="cart-col"></th>
 							</tr>
@@ -2427,7 +2423,7 @@
 						{#each inventoryGroups as group}
 							<tbody>
 								<tr class="artist-divider">
-									<td colspan="5">
+									<td colspan="6">
 										<ArtistGroupHeading artist={group.shop} />
 									</td>
 								</tr>
@@ -2450,6 +2446,8 @@
 										</td>
 										<td>
 											<div class="font-bold">{item.title}</div>
+										</td>
+										<td class="type-col">
 											{#if item.itemType}
 												<div class="text-sm text-gray-600">{item.itemType}</div>
 											{/if}
@@ -2458,23 +2456,51 @@
 											<div class="price-cad">{formatCents(item.priceCents)}</div>
 										</td>
 										<td class="cart-cell">
-											<button
-												type="button"
-												class="add-to-cart-button staff-inv-sold-out-btn"
-												class:is-added={item.soldOut}
-												disabled={savingSoldOutId === item.id}
-												on:click={() => toggleSoldOut(item)}
+											<div
+												class="staff-inv-sold-menu-wrap"
+												class:open={soldOutMenuItemId === item.id}
 											>
-												{#if savingSoldOutId === item.id}
-													Saving…
-												{:else if item.soldOut}
-													<span class="add-to-cart-label-full">Mark as Available</span>
-													<span class="add-to-cart-label-short">Available</span>
-												{:else}
-													<span class="add-to-cart-label-full">Mark as Sold Out</span>
-													<span class="add-to-cart-label-short">Sold Out</span>
+												<button
+													type="button"
+													class="staff-inv-sold-trigger"
+													class:open={soldOutMenuItemId === item.id}
+													class:is-sold-out={item.soldOut}
+													disabled={savingSoldOutId === item.id}
+													aria-expanded={soldOutMenuItemId === item.id}
+													aria-haspopup="menu"
+													on:click={() => toggleSoldOutMenu(item.id)}
+												>
+													<span class="staff-inv-sold-label">
+														{#if savingSoldOutId === item.id}
+															Saving…
+														{:else if item.soldOut}
+															Sold Out
+														{:else}
+															<span class="staff-inv-avail-full">Available</span>
+															<span class="staff-inv-avail-short">Avail.</span>
+														{/if}
+													</span>
+													<span class="staff-paid-caret" aria-hidden="true"></span>
+												</button>
+												{#if soldOutMenuItemId === item.id}
+													<button
+														type="button"
+														class="staff-paid-menu-backdrop"
+														aria-label="Close availability menu"
+														on:click={closeSoldOutMenu}
+													></button>
+													<div class="staff-paid-menu staff-inv-sold-menu" role="menu">
+														<button
+															type="button"
+															role="menuitem"
+															disabled={savingSoldOutId === item.id}
+															on:click={() => toggleSoldOut(item)}
+														>
+															{item.soldOut ? 'Mark as Available' : 'Mark as Sold Out'}
+														</button>
+													</div>
 												{/if}
-											</button>
+											</div>
 										</td>
 									</tr>
 								{/each}
@@ -2517,23 +2543,51 @@
 											<div class="mobile-price-cad">{formatCents(item.priceCents)}</div>
 										</div>
 										<div class="mobile-action">
-											<button
-												type="button"
-												class="add-to-cart-button staff-inv-sold-out-btn"
-												class:is-added={item.soldOut}
-												disabled={savingSoldOutId === item.id}
-												on:click={() => toggleSoldOut(item)}
+											<div
+												class="staff-inv-sold-menu-wrap"
+												class:open={soldOutMenuItemId === item.id}
 											>
-												{#if savingSoldOutId === item.id}
-													Saving…
-												{:else if item.soldOut}
-													<span class="add-to-cart-label-full">Mark as Available</span>
-													<span class="add-to-cart-label-short">Available</span>
-												{:else}
-													<span class="add-to-cart-label-full">Mark as Sold Out</span>
-													<span class="add-to-cart-label-short">Sold Out</span>
+												<button
+													type="button"
+													class="staff-inv-sold-trigger"
+													class:open={soldOutMenuItemId === item.id}
+													class:is-sold-out={item.soldOut}
+													disabled={savingSoldOutId === item.id}
+													aria-expanded={soldOutMenuItemId === item.id}
+													aria-haspopup="menu"
+													on:click={() => toggleSoldOutMenu(item.id)}
+												>
+													<span class="staff-inv-sold-label">
+														{#if savingSoldOutId === item.id}
+															Saving…
+														{:else if item.soldOut}
+															Sold Out
+														{:else}
+															<span class="staff-inv-avail-full">Available</span>
+															<span class="staff-inv-avail-short">Avail.</span>
+														{/if}
+													</span>
+													<span class="staff-paid-caret" aria-hidden="true"></span>
+												</button>
+												{#if soldOutMenuItemId === item.id}
+													<button
+														type="button"
+														class="staff-paid-menu-backdrop"
+														aria-label="Close availability menu"
+														on:click={closeSoldOutMenu}
+													></button>
+													<div class="staff-paid-menu staff-inv-sold-menu" role="menu">
+														<button
+															type="button"
+															role="menuitem"
+															disabled={savingSoldOutId === item.id}
+															on:click={() => toggleSoldOut(item)}
+														>
+															{item.soldOut ? 'Mark as Available' : 'Mark as Sold Out'}
+														</button>
+													</div>
 												{/if}
-											</button>
+											</div>
 										</div>
 									</div>
 								{/each}

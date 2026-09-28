@@ -270,7 +270,11 @@
 
 <div class="fixed-container">
 	<div class="title-bar">
-		<h1>Artist Colony</h1>
+		{#if staffSession}
+			<a class="title-staff-link" href="{base}/staff">STAFF</a>
+		{:else}
+			<h1>Artist Colony</h1>
+		{/if}
 	</div>
 	<div class="header-toolbar">
 		<div id="filter-fields" class="flex items-center">
@@ -347,6 +351,7 @@
 			<div class="header-cell artist-col">Artist Name</div>
 			<div class="header-cell product-code-col">Product Code</div>
 			<div class="header-cell product-col">Product</div>
+			<div class="header-cell type-col">Type</div>
 			<div class="header-cell cad-col">Price (C$)</div>
 			<div class="header-cell cart-col"></div>
 		</div>
@@ -357,6 +362,7 @@
 				<col class="col-artist" />
 				<col class="col-code" />
 				<col class="col-product" />
+				<col class="col-type" />
 				<col class="col-cad" />
 				<col class="col-cart" />
 			</colgroup>
@@ -365,6 +371,7 @@
 					<th class="artist-col"></th>
 					<th class="product-code-col"></th>
 					<th class="product-col"></th>
+					<th class="type-col"></th>
 					<th class="cad-col"></th>
 					<th class="cart-col"></th>
 				</tr>
@@ -372,7 +379,7 @@
 			{#each artistGroups as group}
 				<tbody>
 					<tr class="artist-divider">
-						<td colspan="5">
+						<td colspan="6">
 							<ArtistGroupHeading artist={group.artist} details={group.details} />
 						</td>
 					</tr>
@@ -395,23 +402,24 @@
 									{row[productCodeKey]}
 								{/if}
 							</td>
-							<td colspan={isNotesOnlyItem(row) ? 3 : 1}>
+							<td colspan={isNotesOnlyItem(row) ? 4 : 1}>
 								<div class="font-bold" class:notes-only-text={isNotesOnlyItem(row)}>
 									{row[productTitleKey]}
 								</div>
-								{#if !isNotesOnlyItem(row)}
-									<div class="text-sm text-gray-600">{row[productTypeKey]}</div>
-								{:else if row['Notes']}
+								{#if isNotesOnlyItem(row) && row['Notes']}
 									<div class="text-sm text-gray-600">{row['Notes']}</div>
 								{/if}
 							</td>
 							{#if !isNotesOnlyItem(row)}
+								<td class="type-col">
+									<div class="text-sm text-gray-600">{row[productTypeKey]}</div>
+								</td>
 								<td class="cad-col font-bold">
 									<div class="price-cad">{row[priceKey]}</div>
 								</td>
 								<td class="cart-cell">
 									{#if isSoldOutItem(row)}
-										<em class="unique-item-note">SOLD OUT</em>
+										<span class="sold-out-label">SOLD OUT</span>
 									{:else if isMerchTableItem(row)}
 										{#if staffSession}
 											<button
@@ -503,7 +511,7 @@
 								</div>
 								<div class="mobile-action">
 									{#if isSoldOutItem(row)}
-										<em class="unique-item-note">SOLD OUT</em>
+										<span class="sold-out-label">SOLD OUT</span>
 									{:else if isMerchTableItem(row)}
 										{#if staffSession}
 											<button

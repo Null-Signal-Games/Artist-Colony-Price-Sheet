@@ -55,6 +55,20 @@ type appServer struct {
 	inventoryMu          sync.Mutex
 	staffSessionTTLHours int
 	shopify              *shopifyClient
+	sseClientsMu         sync.RWMutex
+	sseClients           map[chan string]struct{}
+}
+
+func (s *appServer) broadcastOrderEvent(msg string) {
+	s.sseClientsMu.RLock()
+	defer s.sseClientsMu.RUnlock()
+	for ch := range s.sseClients {
+		select {
+		case ch <- msg:
+		default:
+			// drop the message if chan is blocked
+		}
+	}
 }
 
 func jsonDecode(r *http.Request, v any) error {
@@ -317,6 +331,8 @@ func (s *appServer) handleOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.broadcastOrderEvent("update")
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"result":  "success",
 		"orderId": sub.OrderID,
@@ -360,6 +376,7 @@ func main() {
 		inventoryItemsByID:   make(map[string]inventoryItemJSON, len(items)),
 		staffSessionTTLHours: ttlHours,
 		shopify:              newShopifyClientFromEnv(),
+		sseClients:           make(map[chan string]struct{}),
 	}
 	for _, item := range items {
 		s.inventoryItemsByID[item.ID] = item
@@ -384,6 +401,7 @@ func main() {
 	mux.HandleFunc("POST /staff/logout", s.handleStaffLogout)
 
 	staffMux := http.NewServeMux()
+	staffMux.HandleFunc("GET /staff/orders/events", s.handleOrderEvents) // SSE
 	staffMux.HandleFunc("GET /staff/orders", s.handleListOrders)
 	staffMux.HandleFunc("POST /staff/orders", s.handleCreateStaffOrder)
 	staffMux.HandleFunc("GET /staff/orders/{orderId}", s.handleGetOrder)

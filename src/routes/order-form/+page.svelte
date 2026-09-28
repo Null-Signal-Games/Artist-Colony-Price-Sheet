@@ -135,7 +135,7 @@
 					...(merchTableOrder ? { merchTableOrder: true } : {})
 				}); */
 				cart.clear();
-				await goto(`/staff?order=${encodeURIComponent(order.orderId)}`);
+				await goto(`${base}/staff?order=${encodeURIComponent(order.orderId)}`);
 				return;
 			}
 

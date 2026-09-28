@@ -293,4 +293,5 @@ export type StaffApi = {
 	): Promise<Order>;
 	listInventory(filter?: ListInventoryFilter): Promise<InventoryItem[]>;
 	setProductSoldOut(id: string, soldOut: boolean): Promise<InventoryItem>;
+	subscribeToOrderEvents(onEvent: () => void, onError: (err: any) => void): () => void;
 };

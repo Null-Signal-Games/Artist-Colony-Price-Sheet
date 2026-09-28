@@ -96,6 +96,15 @@
 	let partialQtyDraft = '';
 	let partialQtyInputEl: HTMLInputElement | null = null;
 
+	let sseCleanup: (() => void) | null = null;
+	let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+	$: if (authed && tab === 'orders') {
+		setupOrderSync();
+	} else {
+		cleanupOrderSync();
+	}
+
 	// filters
 	let appliedStatusLimited = false;
 	let appliedOrderQuery = '';
@@ -186,8 +195,8 @@
 		await loadOrders();
 	}
 
-	async function loadOrders() {
-		loading = true;
+	async function loadOrders(background = false) {
+		if (!background) loading = true;
 		error = '';
 		try {
 			orders = await staffApi.listOrders(orderListFilter());
@@ -209,11 +218,38 @@
 				authed = false;
 				loginError = err.message;
 			} else {
-				error = err instanceof Error ? err.message : 'Failed to load orders.';
+				if (!background) error = err instanceof Error ? err.message : 'Failed to load orders.';
 			}
 		} finally {
 			loading = false;
 		}
+	}
+
+	function cleanupOrderSync() {
+		if (sseCleanup) {
+			sseCleanup();
+			sseCleanup = null;
+		}
+		if (pollInterval) {
+			clearInterval(pollInterval);
+			pollInterval = null;
+		}
+	}
+
+	function setupOrderSync() {
+		cleanupOrderSync();
+		sseCleanup = staffApi.subscribeToOrderEvents(
+			() => {
+				loadOrders(true);
+			},
+			(err: any) => {
+				console.error('SSE failed, falling back to polling', err);
+				cleanupOrderSync();
+				pollInterval = setInterval(() => {
+					loadOrders(true);
+				}, 5000);
+			}
+		);
 	}
 
 	async function refreshOrdersList() {

@@ -194,11 +194,14 @@ func hashToken(token string) string {
 }
 
 func (s *appServer) authenticateStaff(r *http.Request) (*staffUser, error) {
+	token := ""
 	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
-		return nil, errors.New("missing bearer token")
+	if strings.HasPrefix(auth, "Bearer ") {
+		token = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	}
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
 	if token == "" {
 		return nil, errors.New("missing bearer token")
 	}
@@ -288,6 +291,42 @@ func (s *appServer) parseListFilter(r *http.Request) listOrdersFilter {
 		}
 	}
 	return filter
+}
+
+func (s *appServer) handleOrderEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	// flush now so client knows the connection is established
+	rc := http.NewResponseController(w)
+	_ = rc.Flush()
+
+	ch := make(chan string, 10)
+	s.sseClientsMu.Lock()
+	s.sseClients[ch] = struct{}{}
+	s.sseClientsMu.Unlock()
+
+	defer func() {
+		s.sseClientsMu.Lock()
+		delete(s.sseClients, ch)
+		s.sseClientsMu.Unlock()
+	}()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case msg := <-ch:
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			_ = rc.Flush()
+		case <-ticker.C:
+			fmt.Fprintf(w, "data: ping\n\n")
+			_ = rc.Flush()
+		}
+	}
 }
 
 func (s *appServer) handleListOrders(w http.ResponseWriter, r *http.Request) {
@@ -400,6 +439,7 @@ func (s *appServer) handleCreateStaffOrder(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load the order."})
 		return
 	}
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -655,6 +695,7 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
 		return
 	}
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -723,6 +764,7 @@ func (s *appServer) handleUpdateOrderNotes(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
 		return
 	}
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -854,6 +896,7 @@ func (s *appServer) handleUpdateOrderLine(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
 		return
 	}
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -958,6 +1001,7 @@ func (s *appServer) handleSendInvoice(w http.ResponseWriter, r *http.Request) {
 	if row.MerchTableOrder {
 		message = fmt.Sprintf("Shopify order %s created for %s. Marked Notified in Person.", invoiceID, total)
 	}
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, map[string]any{"order": out, "invoiceId": invoiceID, "message": message})
 }
 
@@ -1009,6 +1053,7 @@ func (s *appServer) handleResendInvoice(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	message := fmt.Sprintf("Invoice %s resent to %s.", invoiceID, row.Email)
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, map[string]any{"order": out, "invoiceId": invoiceID, "message": message})
 }
 
@@ -1081,6 +1126,7 @@ func (s *appServer) handleMarkNotified(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
 		return
 	}
+	s.broadcastOrderEvent("update")
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -80,6 +80,7 @@ func (s *appServer) pollShopifyPayments(ctx context.Context) {
 			log.Printf("shopify poller: mark %s paid failed: %v", row.OrderID, err)
 			continue
 		}
+		s.broadcastOrderEvent("update")
 		log.Printf("shopify poller: order %s paid via Shopify invoice", row.OrderID)
 	}
 }

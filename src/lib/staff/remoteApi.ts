@@ -55,6 +55,27 @@ function ordersQuery(filter: ListOrdersFilter) {
 
 export function createRemoteStaffApi(): StaffApi {
 	return {
+		subscribeToOrderEvents(onEvent: () => void, onError: (err: any) => void): () => void {
+			const token = getStaffToken();
+			if (!token) {
+				onError(new StaffAuthError());
+				return () => {};
+			}
+
+			const es = new EventSource(`${apiBaseUrl()}/staff/orders/events?token=${encodeURIComponent(token)}`);
+			es.onmessage = (event) => {
+				if (event.data !== 'ping') {
+					onEvent();
+				}
+			};
+			es.onerror = (err) => {
+				es.close();
+				onError(err);
+			};
+
+			return () => es.close();
+		},
+
 		async listOrders(filter: ListOrdersFilter = {}): Promise<OrderSummary[]> {
 			const list = await request<OrderSummary[]>(`/staff/orders${ordersQuery(filter)}`);
 			return list ?? [];

@@ -45,8 +45,8 @@ jobs:
       - name: Build & Push Image
         run: docker buildx build -t $IMAGE_NAME:ac-price-sheet_${{ github.ref_name }} --push .
 
-      # - name: Update deployment image tag
-      #   run: |
-      #     kubectl -n $K8S_NAMESPACE set image \
-      #       deployment/artist-colony-orders-api \
-      #       artist-colony-orders-api=$IMAGE_NAME:ac-price-sheet_${{ github.ref_name }}
+      - name: Update deployment image tag
+        run: |
+          kubectl -n $K8S_NAMESPACE set image \
+            deployment/artist-colony-orders-api \
+            artist-colony-orders-api=$IMAGE_NAME:ac-price-sheet_${{ github.ref_name }}

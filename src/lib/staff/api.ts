@@ -38,7 +38,8 @@ export {
 	orderDisplayLabel,
 	orderDisplayStatusKey,
 	effectiveOrderItemQuantity,
-	lineSubtotalForItem
+	lineSubtotalForItem,
+	statusBeforeClose
 } from './types';
 export { inventoryItemId } from './catalog';
 export {

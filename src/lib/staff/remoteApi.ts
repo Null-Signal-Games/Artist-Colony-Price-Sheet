@@ -121,6 +121,13 @@ export function createRemoteStaffApi(): StaffApi {
 			);
 		},
 
+		async resendInvoice(orderId: string, _meta?: StaffActionMeta): Promise<SendInvoiceResult> {
+			return request<SendInvoiceResult>(
+				`/staff/orders/${encodeURIComponent(orderId)}/resend-invoice`,
+				{ method: 'POST' }
+			);
+		},
+
 		async markNotified(
 			orderId: string,
 			channel: NotificationChannel,

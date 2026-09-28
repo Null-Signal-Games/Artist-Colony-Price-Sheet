@@ -409,7 +409,31 @@ var allowedTransitions = map[string][]string{
 	"invoiced": {"notified", "closed"},
 	"notified": {"invoiced", "paid", "closed"},
 	"paid":     {"closed", "notified"},
-	"closed":   {"paid"},
+	"closed":   {"new", "prepared", "invoiced", "notified", "paid"},
+}
+
+func previousStatusBeforeClose(history []historyEntryJSON) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		e := history[i]
+		if e.Kind == "status" && e.ToStatus != nil && *e.ToStatus == "closed" &&
+			e.FromStatus != nil && *e.FromStatus != "" {
+			return *e.FromStatus
+		}
+	}
+	return ""
+}
+
+func expectedReopenStatus(ctx context.Context, db *store, row *orderRow) string {
+	history, err := db.listOrderHistory(ctx, row.RowID)
+	if err == nil {
+		if prev := previousStatusBeforeClose(history); prev != "" {
+			return prev
+		}
+	}
+	if row.ClosedReason.String == "picked_up" || (row.PaidReason.Valid && row.PaidReason.String != "") {
+		return "paid"
+	}
+	return "new"
 }
 
 type statusRequest struct {
@@ -454,6 +478,16 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// restore the status to the one right before the most recent close
+	if fromStatus == "closed" {
+		expected := expectedReopenStatus(ctx, s.db, row)
+		if expected != "" && toStatus != expected {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error": fmt.Sprintf("Re-open must restore previous status (%s).", expected)})
+			return
+		}
+	}
+
 	// state transition from 'new' to 'prepared' requires every line is marked collected or sold out
 	if fromStatus == "new" && toStatus == "prepared" {
 		lines, err := s.db.listOrderLines(ctx, row.RowID)
@@ -488,6 +522,13 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 		if row.PaidReason.String != "shopify" && (req.PaidReason == nil || *req.PaidReason == "") {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "A paid reason is required."})
 			return
+		}
+		if req.PaidReason != nil && *req.PaidReason == "cash" {
+			if req.PaidAmountCents == nil || *req.PaidAmountCents <= 0 {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": "Cash amount received is required."})
+				return
+			}
 		}
 		if req.PaidAmountCents != nil && (*req.PaidAmountCents < 0 || *req.PaidAmountCents > 10_000_00) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Out of range(0<>10,000,00): PaidAmountCents."})
@@ -564,8 +605,8 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// canceled orders resets fulfillment flags
-	if toStatus == "closed" && *req.ClosedReason == "canceled" {
+	// canceled/closed orders reset fulfillment flags
+	if toStatus == "closed" && (*req.ClosedReason == "canceled" || *req.ClosedReason == "closed") {
 		if err := s.db.clearOrderFulfillment(ctx, row.RowID); err != nil {
 			log.Printf("clear fulfillment failed: %v", err)
 		}
@@ -574,6 +615,7 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 	// when order is marked paid with cash, pos, paypal
 	//   convert the shopify draft into a real paid order
 	//   shortcut to automate having to do this in shopify admin
+	var completedOrderGID string
 	if toStatus == "paid" && s.shopify != nil && row.ShopifyDraftOrderID.Valid {
 		orderGID, err := s.shopify.completeDraftOrder(ctx, row.ShopifyDraftOrderID.String)
 		if err != nil {
@@ -582,11 +624,25 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 				"error": "Order marked paid in db, completing the Shopify draft failed. [see shopify api logs]"})
 			return
 		}
+		completedOrderGID = orderGID
 		if orderGID != "" {
 			if err := s.db.setShopifyOrderID(ctx, row.RowID, orderGID); err != nil {
 				log.Printf("record shopify order id failed for %s: %v", row.OrderID, err)
 			}
 		}
+	}
+
+	// @TODO post a Shopify order note/comment for cash payments
+	if toStatus == "paid" && req.PaidReason != nil && *req.PaidReason == "cash" && req.PaidAmountCents != nil {
+		note := fmt.Sprintf("Received $%.2f CAD received", float64(*req.PaidAmountCents)/100)
+		orderRef := completedOrderGID
+		if orderRef == "" && row.ShopifyOrderID.Valid {
+			orderRef = row.ShopifyOrderID.String
+		}
+		if orderRef == "" {
+			orderRef = row.OrderID
+		}
+		log.Printf("shopify cash note stub for %s (%s): %s", row.OrderID, orderRef, note)
 	}
 
 	updated, err := s.db.getOrderByID(ctx, orderID)
@@ -609,7 +665,13 @@ func statusSummary(from, to string, closedReason, paidReason *string) string {
 	}
 	toLabel := labels[to]
 	if to == "closed" && closedReason != nil {
-		closed := map[string]string{"picked_up": "Picked Up", "canceled": "Canceled", "refunded": "Refunded", "other": "Other"}
+		closed := map[string]string{
+			"picked_up": "Picked Up",
+			"closed":    "Closed",
+			"canceled":  "Canceled",
+			"refunded":  "Refunded",
+			"other":     "Other",
+		}
 		toLabel += " (" + closed[*closedReason] + ")"
 	}
 	if to == "paid" && paidReason != nil {
@@ -896,6 +958,57 @@ func (s *appServer) handleSendInvoice(w http.ResponseWriter, r *http.Request) {
 	if row.MerchTableOrder {
 		message = fmt.Sprintf("Shopify order %s created for %s. Marked Notified in Person.", invoiceID, total)
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"order": out, "invoiceId": invoiceID, "message": message})
+}
+
+func (s *appServer) handleResendInvoice(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	orderID := r.PathValue("orderId")
+	row, err := s.db.getOrderByID(ctx, orderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Order not found."})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
+		return
+	}
+	if row.Status != "invoiced" && row.Status != "notified" {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "Only invoiced or notified orders can resend an invoice."})
+		return
+	}
+	if !row.ShopifyInvoiceID.Valid || strings.TrimSpace(row.ShopifyInvoiceID.String) == "" {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "Order has no invoice to resend."})
+		return
+	}
+
+	actor := staffUserFrom(r).DisplayName
+	invoiceID := row.ShopifyInvoiceID.String
+
+	// @TODO resend the existing Shopify Draft order invoice email
+	log.Printf("⚠️ @TODO @STUB resend invoice for %s (%s) to %s", row.OrderID, invoiceID, row.Email)
+
+	if err := s.db.updateOrderFields(ctx, row.RowID, "status = status", []any{}, []historyInsert{{
+		Kind: "invoice", Summary: fmt.Sprintf("Resent invoice (%s)", invoiceID),
+		StaffName: actor,
+	}}); err != nil {
+		log.Printf("resend invoice failed: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not update the order."})
+		return
+	}
+
+	updated, err := s.db.getOrderByID(ctx, orderID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
+		return
+	}
+	out, err := s.orderFromRow(ctx, updated, true)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
+		return
+	}
+	message := fmt.Sprintf("Invoice %s resent to %s.", invoiceID, row.Email)
 	writeJSON(w, http.StatusOK, map[string]any{"order": out, "invoiceId": invoiceID, "message": message})
 }
 

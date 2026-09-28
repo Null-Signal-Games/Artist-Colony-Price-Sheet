@@ -22,6 +22,7 @@
 		logoutStaff,
 		StaffAuthError,
 		staffApi,
+		statusBeforeClose,
 		type ClosedReason,
 		type InventoryItem,
 		type Order,
@@ -30,7 +31,8 @@
 		type OrderSort,
 		type OrderStatus,
 		type OrderSummary,
-		type PaidReason
+		type PaidReason,
+		type NotificationChannel,
 	} from '$lib/staff/api';
 	import {
 		defaultStatusChecks,
@@ -70,6 +72,10 @@
 	let statusMenuOpen = false;
 	let prepareConfirmOpen = false;
 	let invoicedConfirmOpen = false;
+	let cancelConfirmOpen = false;
+	let cashPaidConfirmOpen = false;
+	let cashAmountDraft = '';
+	let cashAmountInputEl: HTMLInputElement | null = null;
 
 	let inventoryQuery = '';
 	let inventory: InventoryItem[] = [];
@@ -265,6 +271,9 @@
 		searchOpen = false;
 		saving = true;
 		error = '';
+		cancelConfirmOpen = false;
+		cashPaidConfirmOpen = false;
+		cashAmountDraft = '';
 		try {
 			selectedOrder = await staffApi.getOrder(orderId);
 			if (!selectedOrder) {
@@ -298,6 +307,9 @@
 		statusFilterOpen = false;
 		searchOpen = false;
 		syncSelectedOrderUrl('');
+		cancelConfirmOpen = false;
+		cashPaidConfirmOpen = false;
+		cashAmountDraft = '';
 	}
 
 	async function setStatus(
@@ -305,6 +317,8 @@
 		options: {
 			closedReason?: ClosedReason;
 			paidReason?: PaidReason;
+			notificationChannel?: NotificationChannel;
+			paidAmountCents?: number;
 		} = {}
 	) {
 		if (!selectedOrder || actionsLocked) return;
@@ -326,13 +340,16 @@
 						? {
 								...meta,
 								paidReason,
-								paidAmountCents: collectedTotalCents(selectedOrder)
+								paidAmountCents:
+									options.paidAmountCents ?? collectedTotalCents(selectedOrder)
 						  }
 						: status === 'notified'
 							? {
 									...meta,
 									notificationChannel:
-										selectedOrder.notificationChannel ?? undefined
+										options.notificationChannel ??
+										selectedOrder.notificationChannel ??
+										undefined
 								}
 								: meta
 			);
@@ -374,23 +391,67 @@
 		await setClosedReason('other');
 	} */
 
-	async function markPaid(reason: Exclude<PaidReason, 'shopify'>) {
+	async function markPaid(
+		reason: Exclude<PaidReason, 'shopify'>,
+		paidAmountCents?: number
+	) {
 		if (!selectedOrder || actionsLocked) return;
 		if (selectedOrder.status !== 'notified') return;
 		error = '';
 		await setStatus('paid', {
-			paidReason: reason
+			paidReason: reason,
+			paidAmountCents
 		});
 		closePaidMenu();
 		closeStatusMenu();
 	}
 
+	function parseCashAmountToCents(raw: string): number | null {
+		const cleaned = raw.trim().replace(/[$,\s]/g, '');
+		if (!cleaned || !/^\d+(\.\d{0,2})?$/.test(cleaned)) return null;
+		const dollars = Number(cleaned);
+		if (!Number.isFinite(dollars) || dollars <= 0) return null;
+		return Math.round(dollars * 100);
+	}
+
+	async function requestCashPaid() {
+		if (!selectedOrder || selectedOrder.status !== 'notified' || actionsLocked) return;
+		closeStatusMenu();
+		closePaidMenu();
+		const suggested = collectedTotalCents(selectedOrder);
+		cashAmountDraft = (suggested / 100).toFixed(2);
+		cashPaidConfirmOpen = true;
+		await tick();
+		cashAmountInputEl?.focus();
+		cashAmountInputEl?.select();
+	}
+
+	function closeCashPaidConfirm() {
+		cashPaidConfirmOpen = false;
+		cashAmountDraft = '';
+	}
+
+	async function confirmCashPaid() {
+		if (!selectedOrder || selectedOrder.status !== 'notified' || actionsLocked) return;
+		const cents = parseCashAmountToCents(cashAmountDraft);
+		if (cents == null) {
+			error = 'Enter a valid cash amount received.';
+			return;
+		}
+		cashPaidConfirmOpen = false;
+		cashAmountDraft = '';
+		await markPaid('cash', cents);
+	}
+
 	async function choosePaidReason(reason: PaidReason) {
 		if (reason === 'shopify' || actionsLocked) return;
 		closeStatusMenu();
-		if (selectedOrder?.status === 'notified') {
-			await markPaid(reason);
+		if (selectedOrder?.status !== 'notified') return;
+		if (reason === 'cash') {
+			await requestCashPaid();
+			return;
 		}
+		await markPaid(reason);
 	}
 
 	function closePaidMenu() {
@@ -426,11 +487,22 @@
 		statusMenuOpen = !statusMenuOpen;
 	}
 
-	async function cancelOrder() {
+	function requestCancelOrder() {
 		if (!selectedOrder || actionsLocked) return;
 		if (selectedOrder.status === 'closed') return;
 		closeStatusMenu();
 		closePaidMenu();
+		cancelConfirmOpen = true;
+	}
+
+	function closeCancelConfirm() {
+		cancelConfirmOpen = false;
+	}
+
+	async function confirmCancelOrder() {
+		if (!selectedOrder || actionsLocked) return;
+		if (selectedOrder.status === 'closed') return;
+		cancelConfirmOpen = false;
 		await setStatus('closed', { closedReason: 'closed' });
 	}
 
@@ -445,6 +517,25 @@
 	async function sendInvoiceFromMenu() {
 		closeStatusMenu();
 		await sendInvoice();
+	}
+
+	async function resendInvoiceFromMenu() {
+		if (!selectedOrder || actionsLocked) return;
+		if (selectedOrder.status !== 'invoiced' && selectedOrder.status !== 'notified') return;
+		closeStatusMenu();
+		sendingInvoice = true;
+		error = '';
+		invoiceSuccess = '';
+		try {
+			const result = await staffApi.resendInvoice(selectedOrder.orderId, staffMeta());
+			selectedOrder = result.order;
+			invoiceSuccess = result.message;
+			await refreshOrdersList();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to resend invoice.';
+		} finally {
+			sendingInvoice = false;
+		}
 	}
 
 	function isLineReadyForPrepare(item: OrderItem) {
@@ -498,22 +589,14 @@
 			: null;
 
 	$: canReopenClosed =
-		!!selectedOrder && selectedOrder.status === 'closed';
+		!!selectedOrder &&
+		selectedOrder.status === 'closed' &&
+		!!statusBeforeClose(selectedOrder);
 
 	$: isPickedUp =
 		!!selectedOrder &&
 		selectedOrder.status === 'closed' &&
 		selectedOrder.closedReason === 'picked_up';
-
-	$: isClosedOnly =
-		!!selectedOrder &&
-		selectedOrder.status === 'closed' &&
-		selectedOrder.closedReason === 'closed';
-
-	$: isCanceled =
-		!!selectedOrder &&
-		selectedOrder.status === 'closed' &&
-		selectedOrder.closedReason === 'canceled';
 
 	$: statusHistoryEntries = (selectedOrder?.history ?? []).filter(
 		(entry) =>
@@ -545,7 +628,7 @@
 			return next === 'closed' || next === 'notified';
 		}
 		if (selectedOrder.status === 'closed') {
-			return next === 'paid';
+			return next === statusBeforeClose(selectedOrder);
 		}
 		return false;
 	}
@@ -604,11 +687,28 @@
 	async function reopenClosedOrder() {
 		if (!selectedOrder || actionsLocked) return;
 		if (!canReopenClosed) return;
+		const prev = statusBeforeClose(selectedOrder);
+		if (!prev) return;
 		closeStatusMenu();
 		closePaidMenu();
-		await setStatus('paid', {
-			paidReason: selectedOrder.paidReason ?? 'cash'
-		});
+		if (prev === 'paid') {
+			await setStatus('paid', {
+				paidReason: selectedOrder.paidReason ?? 'cash'
+			});
+			return;
+		}
+		if (prev === 'notified') {
+			const channel: NotificationChannel =
+				selectedOrder.notificationChannel ??
+				(selectedOrder.merchTableOrder
+					? 'in_person'
+					: selectedOrder.discordHandle.trim()
+						? 'discord'
+						: 'email');
+			await setStatus('notified', { notificationChannel: channel });
+			return;
+		}
+		await setStatus(prev);
 	}
 
 	function discordNotifyMessage(order: Order) {
@@ -1297,7 +1397,7 @@
 													role="menuitem"
 													class="staff-status-menu-cancel staff-status-menu-divider"
 													disabled={actionsLocked || sendingInvoice}
-													on:click={cancelOrder}
+													on:click={requestCancelOrder}
 												>
 													Close Order
 												</button>
@@ -1333,7 +1433,7 @@
 													role="menuitem"
 													class="staff-status-menu-cancel staff-status-menu-divider"
 													disabled={actionsLocked || sendingInvoice}
-													on:click={cancelOrder}
+													on:click={requestCancelOrder}
 												>
 													Close Order
 												</button>
@@ -1389,9 +1489,9 @@
 													role="menuitem"
 													disabled={actionsLocked}
 													on:click={() =>
-																									markNotified(
-																										selectedOrder?.discordHandle.trim() ? 'discord' : 'email'
-																									)}
+														markNotified(
+															selectedOrder?.discordHandle.trim() ? 'discord' : 'email'
+														)}
 												>
 													{selectedOrder.discordHandle.trim()
 														? 'Notified On Discord'
@@ -1401,9 +1501,17 @@
 											<button
 												type="button"
 												role="menuitem"
+												disabled={actionsLocked || sendingInvoice}
+												on:click={resendInvoiceFromMenu}
+											>
+												{sendingInvoice ? 'Resending Invoice…' : 'Resend Invoice'}
+											</button>
+											<button
+												type="button"
+												role="menuitem"
 												class="staff-status-menu-cancel staff-status-menu-divider"
 												disabled={actionsLocked || sendingInvoice}
-												on:click={cancelOrder}
+												on:click={requestCancelOrder}
 											>
 												Close Order
 											</button>
@@ -1427,7 +1535,7 @@
 										class="staff-status-trigger"
 										data-status="notified"
 										class:open={statusMenuOpen}
-										disabled={actionsLocked}
+										disabled={actionsLocked || sendingInvoice}
 										aria-expanded={statusMenuOpen}
 										aria-haspopup="menu"
 										on:click={toggleStatusMenu}
@@ -1474,9 +1582,17 @@
 											<button
 												type="button"
 												role="menuitem"
+												disabled={actionsLocked || sendingInvoice}
+												on:click={resendInvoiceFromMenu}
+											>
+												{sendingInvoice ? 'Resending Invoice…' : 'Resend Invoice'}
+											</button>
+											<button
+												type="button"
+												role="menuitem"
 												class="staff-status-menu-cancel staff-status-menu-divider"
 												disabled={actionsLocked}
-												on:click={cancelOrder}
+												on:click={requestCancelOrder}
 											>
 												Close Order
 											</button>
@@ -1540,7 +1656,7 @@
 												role="menuitem"
 												class="staff-status-menu-cancel staff-status-menu-divider"
 												disabled={actionsLocked}
-												on:click={cancelOrder}
+												on:click={requestCancelOrder}
 											>
 												Close Order
 											</button>
@@ -1601,7 +1717,7 @@
 										</div>
 									{/if}
 								</div>
-							{:else if isClosedOnly}
+							{:else if selectedOrder.status === 'closed'}
 								<div class="staff-status-menu-wrap">
 									<button
 										type="button"
@@ -1613,7 +1729,7 @@
 										aria-haspopup="menu"
 										on:click={toggleStatusMenu}
 									>
-										<span>Closed</span>
+										<span>{orderDisplayLabel(selectedOrder)}</span>
 										<span class="staff-paid-caret" aria-hidden="true"></span>
 									</button>
 									{#if statusMenuOpen}
@@ -1628,7 +1744,7 @@
 												type="button"
 												role="menuitem"
 												class="staff-status-menu-back"
-												disabled={actionsLocked}
+												disabled={actionsLocked || !canReopenClosed}
 												on:click={reopenClosedOrder}
 											>
 												Re-Open Order
@@ -1645,13 +1761,6 @@
 										</div>
 									{/if}
 								</div>
-							{:else if selectedOrder.status === 'closed'}
-								<span
-									class="staff-closed-badge"
-									data-status={orderDisplayStatusKey(selectedOrder)}
-								>
-									{orderDisplayLabel(selectedOrder)}
-								</span>
 							{/if}
 						</div>
 						<div class="staff-detail-main">
@@ -1759,6 +1868,15 @@
 										</button>
 									</div>
 								</div>
+								<button
+									type="button"
+									class="staff-confirm-btn staff-detail-action-btn"
+									data-status="notified"
+									disabled={actionsLocked}
+									on:click={() => markNotified('discord')}
+								>
+									Notified on Discord
+								</button>
 							{:else}
 								<p class="staff-notify-notice" role="status">
 									This customer did not provide a Discord handle. After confirming they received
@@ -1925,6 +2043,51 @@
 						{/if}
 					</div>
 
+					{#if selectedOrder.status === 'invoiced' || selectedOrder.status === 'notified'}
+						<button
+							type="button"
+							class="staff-confirm-btn staff-detail-action-btn staff-refresh-payment-btn"
+							on:click={() => window.location.reload()}
+						>
+							Refresh Order Payment Status
+						</button>
+					{/if}
+
+					{#if selectedOrder.status === 'new'}
+						<button
+							type="button"
+							class="staff-confirm-btn staff-detail-action-btn"
+							data-status="prepared"
+							disabled={actionsLocked || !canSelectStatus('prepared')}
+							title={allLinesReadyForPrepare
+								? undefined
+								: 'Check off every line (or mark sold out) before preparing'}
+							on:click={requestMarkPrepared}
+						>
+							Order is Prepared!
+						</button>
+					{:else if selectedOrder.status === 'prepared'}
+						<button
+							type="button"
+							class="staff-confirm-btn staff-detail-action-btn"
+							data-status="invoiced"
+							disabled={actionsLocked || sendingInvoice}
+							on:click={sendInvoiceFromMenu}
+						>
+							{sendingInvoice ? 'Sending Invoice…' : 'Send Invoice'}
+						</button>
+					{:else if selectedOrder.status === 'paid'}
+						<button
+							type="button"
+							class="staff-confirm-btn staff-detail-action-btn"
+							data-status="paid"
+							disabled={actionsLocked}
+							on:click={markOrderPickedUp}
+						>
+							Order Picked Up
+						</button>
+					{/if}
+
 					<label class="staff-notes">
 						Staff notes
 						<textarea
@@ -2083,6 +2246,114 @@
 						on:click={confirmSetAsInvoiced}
 					>
 						Set As Invoiced
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if cancelConfirmOpen}
+		<div class="staff-confirm-overlay" role="presentation">
+			<button
+				type="button"
+				class="staff-confirm-backdrop"
+				aria-label="Cancel close order confirmation"
+				on:click={closeCancelConfirm}
+			></button>
+			<div
+				class="staff-confirm-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="staff-cancel-confirm-title"
+			>
+				<p id="staff-cancel-confirm-title" class="staff-confirm-message">
+					Are you sure?
+				</p>
+				<p class="staff-confirm-detail">
+					Are you sure you want to cancel this order? This will not undo any payments or
+					emails that have already been sent.
+				</p>
+				<div class="staff-confirm-actions">
+					<button
+						type="button"
+						class="staff-confirm-btn staff-confirm-btn-secondary"
+						disabled={actionsLocked}
+						on:click={closeCancelConfirm}
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						class="staff-confirm-btn"
+						data-status="closed"
+						disabled={actionsLocked}
+						on:click={confirmCancelOrder}
+					>
+						Close Order
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if cashPaidConfirmOpen}
+		<div class="staff-confirm-overlay" role="presentation">
+			<button
+				type="button"
+				class="staff-confirm-backdrop"
+				aria-label="Cancel cash payment"
+				on:click={closeCashPaidConfirm}
+			></button>
+			<div
+				class="staff-confirm-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="staff-cash-paid-confirm-title"
+			>
+				<p id="staff-cash-paid-confirm-title" class="staff-confirm-message">
+					Cash received
+				</p>
+				<p class="staff-confirm-detail">
+					Enter the amount of cash received for this order.
+					{#if selectedOrder}
+						Order total is {formatCents(collectedTotalCents(selectedOrder))}.
+					{/if}
+				</p>
+				<label class="staff-cash-amount-label">
+					Amount (CAD)
+					<input
+						bind:this={cashAmountInputEl}
+						type="text"
+						inputmode="decimal"
+						autocomplete="off"
+						class="staff-cash-amount-input"
+						bind:value={cashAmountDraft}
+						disabled={actionsLocked}
+						on:keydown={(event) => {
+							if (event.key === 'Enter') {
+								event.preventDefault();
+								void confirmCashPaid();
+							}
+						}}
+					/>
+				</label>
+				<div class="staff-confirm-actions">
+					<button
+						type="button"
+						class="staff-confirm-btn staff-confirm-btn-secondary"
+						disabled={actionsLocked}
+						on:click={closeCashPaidConfirm}
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						class="staff-confirm-btn"
+						data-status="paid"
+						disabled={actionsLocked || parseCashAmountToCents(cashAmountDraft) == null}
+						on:click={confirmCashPaid}
+					>
+						Mark Paid via Cash
 					</button>
 				</div>
 			</div>

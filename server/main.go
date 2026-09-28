@@ -392,6 +392,7 @@ func main() {
 	staffMux.HandleFunc("PATCH /staff/orders/{orderId}/lines/{lineIndex}", s.handleUpdateOrderLine)
 	staffMux.HandleFunc("POST /staff/orders/{orderId}/send-invoice", s.handleSendInvoice)
 	staffMux.HandleFunc("POST /staff/orders/{orderId}/notified", s.handleMarkNotified)
+	staffMux.HandleFunc("POST /staff/orders/{orderId}/resend-invoice", s.handleResendInvoice)
 	staffMux.HandleFunc("GET /staff/inventory", s.handleListInventory)
 	staffMux.HandleFunc("PATCH /staff/inventory/{id}/sold-out", s.handleSetSoldOut)
 	mux.Handle("/staff/", s.staffAuthMiddleware(staffMux))

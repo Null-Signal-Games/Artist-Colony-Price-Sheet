@@ -3819,6 +3819,22 @@ a.staff-shopify-order:hover {
 	width: 100%;
 }
 
+.staff-detail-action-btn {
+	margin: 24px 0 14px;
+}
+
+.staff-refresh-payment-btn {
+	border: 1px solid #ced4da;
+	background: #ffffff;
+	color: #111111;
+}
+
+.staff-refresh-payment-btn:hover:not(:disabled) {
+	background: #f8f9fa;
+	border-color: #adb5bd;
+	filter: none;
+}
+
 .staff-prepare-hint {
 	margin: 0 0 14px;
 	font-size: 14px;
@@ -3886,6 +3902,40 @@ a.staff-shopify-order:hover {
 	line-height: 1.35;
 	color: #111111;
 	text-align: center;
+}
+
+.staff-confirm-detail {
+	margin: 0 0 20px;
+	font-size: 0.95em;
+	font-weight: 400;
+	line-height: 1.4;
+	/* color: #555555; */
+	color: #333333;
+	text-align: left;
+}
+
+.staff-cash-amount-label {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0 0 20px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #555555;
+}
+
+.staff-cash-amount-input {
+	box-sizing: border-box;
+	width: 100%;
+	border: 1px solid #ced4da;
+	border-radius: var(--staff-radius);
+	padding: 10px 12px;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 16px;
+	font-weight: 600;
+	color: #111111;
 }
 
 .staff-confirm-dialog:has(.staff-confirm-close) .staff-confirm-message {
@@ -4314,6 +4364,13 @@ a.staff-shopify-order:hover {
 		grid-template-columns: auto minmax(0, 1fr) auto auto auto;
 		gap: 10px 12px;
 		padding: 10px 12px 0;
+	}
+
+	.staff-detail-action-btn {
+		width: auto;
+		min-width: 250px;
+		margin-left: auto;
+		margin-right: auto;
 	}
 
 	.staff-total-readonly {

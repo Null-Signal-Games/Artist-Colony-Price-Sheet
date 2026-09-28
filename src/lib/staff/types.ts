@@ -52,10 +52,17 @@ export const CLOSED_REASON_LABELS: Record<ClosedReason, string> = {
 
 export function orderDisplayLabel(order: {
 	status: OrderStatus;
-	closedReason?: ClosedReason | null;
+	closedReason?: ClosedReason | null | string;
 }): string {
 	if (order.status === 'closed' && order.closedReason) {
-		return CLOSED_REASON_LABELS[order.closedReason];
+		return (
+			CLOSED_REASON_LABELS[order.closedReason as ClosedReason] ??
+			(order.closedReason === 'canceled'
+				? 'Canceled'
+				: order.closedReason === 'refunded'
+					? 'Refunded'
+					: 'Closed')
+		);
 	}
 	return ORDER_STATUS_LABELS[order.status];
 }
@@ -166,6 +173,25 @@ export type OrderHistoryEntry = {
 	toStatus?: OrderStatus | null;
 };
 
+// get previous status
+export function statusBeforeClose(order: {
+	status: OrderStatus;
+	closedReason?: ClosedReason | null;
+	paidReason?: PaidReason | null;
+	history?: OrderHistoryEntry[] | null;
+}): OrderStatus | null {
+	if (order.status !== 'closed') return null;
+	const history = order.history ?? [];
+	for (let i = history.length - 1; i >= 0; i--) {
+		const entry = history[i];
+		if (entry.kind === 'status' && entry.toStatus === 'closed' && entry.fromStatus) {
+			return entry.fromStatus;
+		}
+	}
+	if (order.closedReason === 'picked_up' || order.paidReason) return 'paid';
+	return 'new';
+}
+
 export type StaffActionMeta = {
 	staffName?: string;
 };
@@ -256,6 +282,9 @@ export type StaffApi = {
 
   // @TODO WIP, stubbed shopify invoice action
 	sendInvoice(orderId: string, meta?: StaffActionMeta): Promise<SendInvoiceResult>;
+
+	// @TODO WIP stubbed api
+	resendInvoice(orderId: string, meta?: StaffActionMeta): Promise<SendInvoiceResult>;
 
 	markNotified(
 		orderId: string,

@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
 	import { afterNavigate } from '$app/navigation';
+	import { base } from '$app/paths';
 	import { cart, cartCount, cartItemId, parseMoney } from '$lib/cart';
 	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
 	import { shopPromoDetails } from '$lib/artistDetails';
@@ -294,7 +295,7 @@
 				>
 			{/if}
 		</div>
-		<a class="header-order-link" href="/order-form" aria-label="View order">
+		<a class="header-order-link" href="{base}/order-form" aria-label="View order">
 			<span class="header-view-order-text">View Order</span>
 			<span class="header-cart-icon">
 				<svg
@@ -336,7 +337,7 @@
 			</p>
 		</div>
 		{#if $cartCount > 0}
-			<a class="view-order-button" href="/order-form">View Order ({$cartCount})</a>
+			<a class="view-order-button" href="{base}/order-form">View Order ({$cartCount})</a>
 		{/if}
 	</div>
 

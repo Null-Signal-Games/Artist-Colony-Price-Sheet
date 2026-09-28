@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, replaceState } from '$app/navigation';
+	import { base } from '$app/paths';
 	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
 	import { get } from 'svelte/store';
@@ -395,7 +396,7 @@
 			email: source.email,
 			merchTableOrder: Boolean(source.merchTableOrder)
 		});
-		await goto('/order-form');
+		await goto(`${base}/order-form`);
 	}
 
 	/* async function saveClosedReasonOther() {
@@ -1394,7 +1395,7 @@
 				>
 					Inventory
 				</button>
-				<a href="/" on:click={closeMenu}>Price List</a>
+				<a href="{base}/" on:click={closeMenu}>Price List</a>
 				<button type="button" on:click={logOut}>Log Out</button>
 			</nav>
 		{/if}

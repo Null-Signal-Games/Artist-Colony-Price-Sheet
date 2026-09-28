@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
 	import OrderItemsTable from '$lib/OrderItemsTable.svelte';
 	import { cart, cartCount, formatMoney, parseMoney, type CartItem } from '$lib/cart';
 	import { consumeCheckoutDraft } from '$lib/checkoutDraft';
@@ -168,7 +169,7 @@
 
 <div class="order-form-page">
 	<header class="order-form-header">
-		<a class="back-link" href="/">← View Items</a>
+		<a class="back-link" href="{base}/">← View Items</a>
 		<h1>Artist Colony</h1>
 	</header>
 
@@ -213,13 +214,13 @@
 						CAD.
 					</p>
 				</section>
-				<a class="submit-order-button" href="/">View Price Sheet</a>
+				<a class="submit-order-button" href="{base}/">View Price Sheet</a>
 			</div>
 		{:else if $cartCount === 0}
 			<section class="empty-cart">
 				<h2 class="order-page-title">Order Form</h2>
 				<p>Your cart is empty.</p>
-				<a class="submit-order-button" href="/">View items</a>
+				<a class="submit-order-button" href="{base}/">View items</a>
 			</section>
 		{:else}
 			<form class="order-details-form" on:submit|preventDefault={submitOrder}>

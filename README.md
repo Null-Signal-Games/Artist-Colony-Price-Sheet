@@ -114,9 +114,12 @@ ON oi.order_id = o.id;
 
 ```sh
 docker buildx build \
-    -t registry.digitalocean.com/nsgcr/artist-colony-orders-api:v0.1.0 \
+    -t registry.digitalocean.com/nsgcr/shortcodes:ac-price-sheet_v0.1.0 \
     --push .
 ```
+
+_Note: we hit the limit of repositories, so reusing an existing one._
+original: `registry.digitalocean.com/nsgcr/artist-colony-orders-api:v0.1.0`
 
 ## Building Client
 

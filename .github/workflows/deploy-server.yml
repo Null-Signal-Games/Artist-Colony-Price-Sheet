@@ -6,7 +6,10 @@ on:
     types: [published]
 
 env:
-  IMAGE_NAME: registry.digitalocean.com/nsgcr/artist-colony-orders-api
+  # we reached the limit of repositories (5)
+  # switch to correct image name if we ever increase this limit
+  # IMAGE_NAME: registry.digitalocean.com/nsgcr/artist-colony-orders-api
+  IMAGE_NAME: registry.digitalocean.com/nsgcr/shortcodes
   CLUSTER_NAME: k8s-1-33-1-do-3-fra1-1757785023859
   K8S_NAMESPACE: nsg-artist-colony-orders
 
@@ -40,10 +43,10 @@ jobs:
           doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
 
       - name: Build & Push Image
-        run: docker buildx build -t $IMAGE_NAME:${{ github.ref_name }} --push .
+        run: docker buildx build -t $IMAGE_NAME:ac-price-sheet_${{ github.ref_name }} --push .
 
       # - name: Update deployment image tag
       #   run: |
       #     kubectl -n $K8S_NAMESPACE set image \
       #       deployment/artist-colony-orders-api \
-      #       artist-colony-orders-api=$IMAGE_NAME:${{ github.ref_name }}
+      #       artist-colony-orders-api=$IMAGE_NAME:ac-price-sheet_${{ github.ref_name }}

@@ -271,69 +271,73 @@
 	<div class="title-bar">
 		<h1>Artist Colony</h1>
 	</div>
-	<a class="header-order-link" href="/order-form" aria-label="View order">
-		<span class="header-view-order-text">View Order</span>
-		<span class="header-cart-icon">
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="20"
-				height="20"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				aria-hidden="true"
-			>
-				<circle cx="9" cy="21" r="1" />
-				<circle cx="20" cy="21" r="1" />
-				<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-			</svg>
-			{#if $cartCount > 0}
-				<span class="cart-count">{$cartCount}</span>
+	<div class="header-toolbar">
+		<div id="filter-fields" class="flex items-center">
+			<select bind:value={selectedShop} class="border border-gray-300 p-2">
+				<option value="">All Shops</option>
+				{#each shopOptions as shop}
+					<option value={shop}>{shop}</option>
+				{/each}
+				<option value={MERCH_TABLE_FILTER}>Merch Table Items</option>
+			</select>
+			<div class="search-row">
+				<input
+					type="text"
+					placeholder="Search"
+					bind:value={searchTerm}
+					class="border border-gray-300 p-2"
+				/>
+			</div>
+			{#if selectedShop || searchTerm}
+				<button type="button" on:click={clearAll} class="clear-button" aria-label="Clear filters"
+					>&times;</button
+				>
 			{/if}
-		</span>
-	</a>
-	<div id="filter-fields" class="mb-4 flex items-center">
-		<select bind:value={selectedShop} class="border border-gray-300 p-2">
-			<option value="">All Shops</option>
-			{#each shopOptions as shop}
-				<option value={shop}>{shop}</option>
-			{/each}
-			<option value={MERCH_TABLE_FILTER}>Merch Table Items</option>
-		</select>
-		<div class="search-row">
-			<input
-				type="text"
-				placeholder="Search products"
-				bind:value={searchTerm}
-				class="border border-gray-300 p-2"
-			/>
 		</div>
-		{#if selectedShop || searchTerm}
-			<button type="button" on:click={clearAll} class="clear-button" aria-label="Clear filters"
-				>&times;</button
-			>
-		{/if}
+		<a class="header-order-link" href="/order-form" aria-label="View order">
+			<span class="header-view-order-text">View Order</span>
+			<span class="header-cart-icon">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="20"
+					height="20"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<circle cx="9" cy="21" r="1" />
+					<circle cx="20" cy="21" r="1" />
+					<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+				</svg>
+				{#if $cartCount > 0}
+					<span class="cart-count">{$cartCount}</span>
+				{/if}
+			</span>
+		</a>
 	</div>
 </div>
 <div class="page-container" class:has-order-cta={$cartCount > 0}>
 	<div class="site-footer" class:has-order-cta={$cartCount > 0}>
+		<div class="footer-notes">
+			<p class="footer-notes-text">
+				<span class="merch-note">
+					*Buy at Merch Table: Unique Items must be selected and paid for in-person at the Merch
+					Table.
+				</span>
+				<span class="last-updated-container">
+					Last Updated:
+					<span class="last-updated-value font-semibold">{data.lastUpdated}</span>
+					EDT (UTC-4)
+				</span>
+			</p>
+		</div>
 		{#if $cartCount > 0}
 			<a class="view-order-button" href="/order-form">View Order ({$cartCount})</a>
 		{/if}
-		<div class="footer-notes">
-			<p class="merch-note">
-				*Buy at Merch Table: Unique Items must be selected and paid for in-person at the Merch
-				Table.
-			</p>
-			<p class="last-updated-container">
-				Last Updated:
-				<span class="last-updated-value font-semibold">{data.lastUpdated}</span>
-				EDT (UTC-4)
-			</p>
-		</div>
 	</div>
 
 	{#if filteredData && filteredData.length > 0}
@@ -382,7 +386,7 @@
 								{#if isNotesOnlyItem(row)}
 									<!-- skip, this line is for notes, no product code -->
 								{:else if isMerchTableItem(row)}
-									{#if (row[productCodeKey] ?? '').trim()}
+									{#if staffSession && (row[productCodeKey] ?? '').trim()}
 										<div class="merch-table-code">{row[productCodeKey]}</div>
 									{/if}
 									<em class="unique-item-note">*Merch Table</em>
@@ -415,10 +419,19 @@
 												class:is-added={addedItemIds[rowId(row)]}
 												on:click={() => addToCart(row)}
 											>
-												{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
+												{#if addedItemIds[rowId(row)]}
+													Added!
+												{:else}
+													<span class="add-to-cart-label-full">Add to Cart</span>
+													<span class="add-to-cart-label-short">Add</span>
+												{/if}
 											</button>
 										{:else}
-											<em class="unique-item-note">*Buy at Merch Table</em>
+											<em class="unique-item-note buy-at-merch-note"
+												><span class="buy-merch-line">*Buy at</span
+												><span class="buy-merch-line">Merch</span
+												><span class="buy-merch-line">Table</span></em
+											>
 										{/if}
 									{:else if canAddToCart(row)}
 										<button
@@ -427,7 +440,12 @@
 											class:is-added={addedItemIds[rowId(row)]}
 											on:click={() => addToCart(row)}
 										>
-											{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
+											{#if addedItemIds[rowId(row)]}
+												Added!
+											{:else}
+												<span class="add-to-cart-label-full">Add to Cart</span>
+												<span class="add-to-cart-label-short">Add</span>
+											{/if}
 										</button>
 									{/if}
 								</td>
@@ -462,7 +480,7 @@
 							{:else}
 								<div class="mobile-left">
 									{#if isMerchTableItem(row)}
-										{#if (row[productCodeKey] ?? '').trim()}
+										{#if staffSession && (row[productCodeKey] ?? '').trim()}
 											<div class="mobile-product-code merch-table-code">{row[productCodeKey]}</div>
 										{/if}
 										<em class="unique-item-note">*Merch Table</em>
@@ -478,31 +496,47 @@
 								<div class="mobile-prices">
 									<div class="mobile-price-cad">{row[priceKey]}</div>
 								</div>
-								{#if isSoldOutItem(row)}
-									<em class="unique-item-note">SOLD OUT</em>
-								{:else if isMerchTableItem(row)}
-									{#if staffSession}
+								<div class="mobile-action">
+									{#if isSoldOutItem(row)}
+										<em class="unique-item-note">SOLD OUT</em>
+									{:else if isMerchTableItem(row)}
+										{#if staffSession}
+											<button
+												type="button"
+												class="add-to-cart-button"
+												class:is-added={addedItemIds[rowId(row)]}
+												on:click={() => addToCart(row)}
+											>
+												{#if addedItemIds[rowId(row)]}
+													Added!
+												{:else}
+													<span class="add-to-cart-label-full">Add to Cart</span>
+													<span class="add-to-cart-label-short">Add</span>
+												{/if}
+											</button>
+										{:else}
+											<em class="unique-item-note buy-at-merch-note"
+												><span class="buy-merch-line">*Buy at</span
+												><span class="buy-merch-line">Merch</span
+												><span class="buy-merch-line">Table</span></em
+											>
+										{/if}
+									{:else if canAddToCart(row)}
 										<button
 											type="button"
 											class="add-to-cart-button"
 											class:is-added={addedItemIds[rowId(row)]}
 											on:click={() => addToCart(row)}
 										>
-											{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
+											{#if addedItemIds[rowId(row)]}
+												Added!
+											{:else}
+												<span class="add-to-cart-label-full">Add to Cart</span>
+												<span class="add-to-cart-label-short">Add</span>
+											{/if}
 										</button>
-									{:else}
-										<em class="unique-item-note">*Buy at Merch Table</em>
 									{/if}
-								{:else if canAddToCart(row)}
-									<button
-										type="button"
-										class="add-to-cart-button"
-										class:is-added={addedItemIds[rowId(row)]}
-										on:click={() => addToCart(row)}
-									>
-										{addedItemIds[rowId(row)] ? 'Added!' : 'Add to Cart'}
-									</button>
-								{/if}
+								</div>
 							{/if}
 						</div>
 					{/each}

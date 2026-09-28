@@ -3,7 +3,7 @@
   export let details: { label: string; href?: string }[] = [];
 </script>
 
-<div class="artist-heading">
+<div class="artist-heading" class:has-multiple-links={details.length > 1}>
   <h2>{artist}</h2>
   {#if details.length}
     <h3>

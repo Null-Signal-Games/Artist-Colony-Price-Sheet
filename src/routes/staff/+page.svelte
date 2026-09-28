@@ -22,7 +22,6 @@
 		logoutStaff,
 		StaffAuthError,
 		staffApi,
-		statusBeforeClose,
 		type ClosedReason,
 		type InventoryItem,
 		type Order,
@@ -45,6 +44,7 @@
 		formatMoney
 	} from '$lib/cart';
 	import { writeCheckoutDraft } from '$lib/checkoutDraft';
+	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
 
 	let authed = false;
 	let authChecked = false;
@@ -73,9 +73,11 @@
 	let prepareConfirmOpen = false;
 	let invoicedConfirmOpen = false;
 	let cancelConfirmOpen = false;
-	let cashPaidConfirmOpen = false;
-	let cashAmountDraft = '';
-	let cashAmountInputEl: HTMLInputElement | null = null;
+	let paidAmountConfirmOpen = false;
+	let paidAmountDraft = '';
+	let paidAmountInputEl: HTMLInputElement | null = null;
+	let pendingPaidReason: Exclude<PaidReason, 'shopify'> | null = null;
+	let discordNotifyOpen = false;
 
 	let inventoryQuery = '';
 	let inventory: InventoryItem[] = [];
@@ -89,6 +91,9 @@
 	let sendingInvoice = false;
 	let invoiceSuccess = '';
 	let copyFlash = '';
+	let partialQtyEditingIndex: number | null = null;
+	let partialQtyDraft = '';
+	let partialQtyInputEl: HTMLInputElement | null = null;
 
 	// filters
 	let appliedStatusLimited = false;
@@ -272,8 +277,12 @@
 		saving = true;
 		error = '';
 		cancelConfirmOpen = false;
-		cashPaidConfirmOpen = false;
-		cashAmountDraft = '';
+		paidAmountConfirmOpen = false;
+		pendingPaidReason = null;
+		paidAmountDraft = '';
+		partialQtyEditingIndex = null;
+		partialQtyDraft = '';
+		discordNotifyOpen = false;
 		try {
 			selectedOrder = await staffApi.getOrder(orderId);
 			if (!selectedOrder) {
@@ -308,8 +317,12 @@
 		searchOpen = false;
 		syncSelectedOrderUrl('');
 		cancelConfirmOpen = false;
-		cashPaidConfirmOpen = false;
-		cashAmountDraft = '';
+		paidAmountConfirmOpen = false;
+		pendingPaidReason = null;
+		paidAmountDraft = '';
+		partialQtyEditingIndex = null;
+		partialQtyDraft = '';
+		discordNotifyOpen = false;
 	}
 
 	async function setStatus(
@@ -398,15 +411,24 @@
 		if (!selectedOrder || actionsLocked) return;
 		if (selectedOrder.status !== 'notified') return;
 		error = '';
+		const amountCents = paidAmountCents ?? collectedTotalCents(selectedOrder);
 		await setStatus('paid', {
 			paidReason: reason,
-			paidAmountCents
+			paidAmountCents: amountCents
 		});
+		if (selectedOrder?.status === 'paid') {
+			const method =
+				reason === 'credit_card' ? 'Credit Card' : reason === 'paypal' ? 'PayPal' : 'Cash';
+			const paidNote = `Paid ${formatCents(amountCents)} via ${method}`;
+			const existing = (notesDraft || selectedOrder.staffNotes || '').trim();
+			notesDraft = existing ? `${existing}\n${paidNote}` : paidNote;
+			await flushNotesIfNeeded({ quiet: true });
+		}
 		closePaidMenu();
 		closeStatusMenu();
 	}
 
-	function parseCashAmountToCents(raw: string): number | null {
+	function parsePaidAmountToCents(raw: string): number | null {
 		const cleaned = raw.trim().replace(/[$,\s]/g, '');
 		if (!cleaned || !/^\d+(\.\d{0,2})?$/.test(cleaned)) return null;
 		const dollars = Number(cleaned);
@@ -414,44 +436,61 @@
 		return Math.round(dollars * 100);
 	}
 
-	async function requestCashPaid() {
+	function paidConfirmTitle(reason: Exclude<PaidReason, 'shopify'>) {
+		if (reason === 'credit_card') return 'Pay via Credit Card';
+		if (reason === 'paypal') return 'Pay via PayPal';
+		return 'Pay via Cash';
+	}
+
+	function paidConfirmDetail(reason: Exclude<PaidReason, 'shopify'>) {
+		if (reason === 'credit_card') return 'Enter the amount received via credit card for this order.';
+		if (reason === 'paypal') return 'Enter the amount received via PayPal for this order.';
+		return 'Enter the amount of cash received for this order.';
+	}
+
+	function paidConfirmActionLabel(reason: Exclude<PaidReason, 'shopify'>) {
+		return PAID_REASON_LABELS[reason].replace(/^Paid/, 'Mark Paid');
+	}
+
+	async function requestManualPaid(reason: Exclude<PaidReason, 'shopify'>) {
 		if (!selectedOrder || selectedOrder.status !== 'notified' || actionsLocked) return;
 		closeStatusMenu();
 		closePaidMenu();
+		pendingPaidReason = reason;
 		const suggested = collectedTotalCents(selectedOrder);
-		cashAmountDraft = (suggested / 100).toFixed(2);
-		cashPaidConfirmOpen = true;
+		paidAmountDraft = (suggested / 100).toFixed(2);
+		paidAmountConfirmOpen = true;
 		await tick();
-		cashAmountInputEl?.focus();
-		cashAmountInputEl?.select();
+		paidAmountInputEl?.focus();
+		paidAmountInputEl?.select();
 	}
 
-	function closeCashPaidConfirm() {
-		cashPaidConfirmOpen = false;
-		cashAmountDraft = '';
+	function closePaidAmountConfirm() {
+		paidAmountConfirmOpen = false;
+		pendingPaidReason = null;
+		paidAmountDraft = '';
 	}
 
-	async function confirmCashPaid() {
+	async function confirmManualPaid() {
 		if (!selectedOrder || selectedOrder.status !== 'notified' || actionsLocked) return;
-		const cents = parseCashAmountToCents(cashAmountDraft);
+		if (!pendingPaidReason) return;
+		const cents = parsePaidAmountToCents(paidAmountDraft);
 		if (cents == null) {
-			error = 'Enter a valid cash amount received.';
+			error = 'Enter a valid amount received.';
 			return;
 		}
-		cashPaidConfirmOpen = false;
-		cashAmountDraft = '';
-		await markPaid('cash', cents);
+		const reason = pendingPaidReason;
+		paidAmountConfirmOpen = false;
+		pendingPaidReason = null;
+		paidAmountDraft = '';
+		await markPaid(reason, cents);
 	}
 
 	async function choosePaidReason(reason: PaidReason) {
 		if (reason === 'shopify' || actionsLocked) return;
 		closeStatusMenu();
 		if (selectedOrder?.status !== 'notified') return;
-		if (reason === 'cash') {
-			await requestCashPaid();
-			return;
-		}
-		await markPaid(reason);
+		await requestManualPaid(reason);
 	}
 
 	function closePaidMenu() {
@@ -628,7 +667,7 @@
 			return next === 'closed' || next === 'notified';
 		}
 		if (selectedOrder.status === 'closed') {
-			return next === statusBeforeClose(selectedOrder);
+			return false;
 		}
 		return false;
 	}
@@ -734,6 +773,7 @@
 		if (!selectedOrder || actionsLocked) return;
 		if (selectedOrder.status !== 'invoiced') return;
 		closeStatusMenu();
+		discordNotifyOpen = false;
 		if (!(await flushNotesIfNeeded({ quiet: true }))) return;
 		saving = true;
 		error = '';
@@ -749,6 +789,18 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function openDiscordNotify() {
+		if (!selectedOrder || actionsLocked) return;
+		if (!selectedOrder.discordHandle.trim()) return;
+		copyFlash = '';
+		discordNotifyOpen = true;
+	}
+
+	function closeDiscordNotify() {
+		discordNotifyOpen = false;
+		copyFlash = '';
 	}
 
 	async function sendInvoice() {
@@ -810,6 +862,17 @@
 				staffMeta()
 			);
 			await refreshOrdersList();
+			if (lineAction === 'partial') {
+				const qty = selectedOrder.items[lineIndex]?.collectedQuantity;
+				partialQtyEditingIndex = lineIndex;
+				partialQtyDraft = qty != null ? String(qty) : '';
+				await tick();
+				partialQtyInputEl?.focus();
+				partialQtyInputEl?.select();
+			} else if (partialQtyEditingIndex === lineIndex) {
+				partialQtyEditingIndex = null;
+				partialQtyDraft = '';
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to update line action.';
 		} finally {
@@ -824,6 +887,21 @@
 
 	function closeLineMenu() {
 		openLineMenuIndex = null;
+	}
+
+	function toggleLineCollectedFromItem(lineIndex: number, item: OrderItem) {
+		if (!lineItemsEditable || actionsLocked || item.lineAction === 'sold_out') return;
+		void setLineCollected(lineIndex, !item.collected);
+	}
+
+	function startPartialQtyEdit(lineIndex: number, item: OrderItem) {
+		if (!lineItemsEditable || actionsLocked || item.lineAction !== 'partial') return;
+		partialQtyEditingIndex = lineIndex;
+		partialQtyDraft = item.collectedQuantity != null ? String(item.collectedQuantity) : '';
+		void tick().then(() => {
+			partialQtyInputEl?.focus();
+			partialQtyInputEl?.select();
+		});
 	}
 
 	function chooseLineAction(lineIndex: number, lineAction: OrderLineAction, current: OrderLineAction) {
@@ -852,11 +930,17 @@
 				staffMeta()
 			);
 			await refreshOrdersList();
+			partialQtyEditingIndex = null;
+			partialQtyDraft = '';
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to update collected quantity.';
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function savePartialQty(lineIndex: number) {
+		await setCollectedQuantity(lineIndex, partialQtyDraft);
 	}
 
 	function qtyDisplay(item: OrderItem) {
@@ -1017,6 +1101,24 @@
 			savingSoldOutId = '';
 		}
 	}
+
+	function isMerchTableInventory(item: InventoryItem) {
+		return (item.productDisplay ?? '').trim().toLowerCase() === 'merch table';
+	}
+
+	$: inventoryGroups = (() => {
+		const groups: { shop: string; items: InventoryItem[] }[] = [];
+		for (const item of inventory) {
+			const shop = (item.shopName || '').trim() || '—';
+			const last = groups[groups.length - 1];
+			if (!last || last.shop !== shop) {
+				groups.push({ shop, items: [item] });
+			} else {
+				last.items.push(item);
+			}
+		}
+		return groups;
+	})();
 </script>
 
 <svelte:head>
@@ -1036,41 +1138,49 @@
 	}}
 />
 
-<div class="staff-page">
+<div class="staff-page" class:staff-page-login={!authed}>
 	{#if !authed}
-		<section class="staff-panel staff-login-panel">
-			<h2 class="staff-login-title">Staff Sign In</h2>
-			{#if authChecked}
-				<form class="staff-login-form" on:submit={handleLogin}>
-					<label>
-						Username
-						<input
-							type="text"
-							autocomplete="username"
-							bind:value={loginUsername}
-							disabled={loginBusy}
-						/>
-					</label>
-					<label>
-						Password
-						<input
-							type="password"
-							autocomplete="current-password"
-							bind:value={loginPassword}
-							disabled={loginBusy}
-						/>
-					</label>
-					{#if loginError}
-						<p class="staff-login-error">{loginError}</p>
-					{/if}
-					<button type="submit" class="staff-confirm-btn" disabled={loginBusy || !loginUsername.trim() || !loginPassword}>
-						{loginBusy ? 'Signing in…' : 'Sign In'}
-					</button>
-				</form>
-			{:else}
-				<p class="staff-muted">Loading…</p>
-			{/if}
-		</section>
+		<header class="staff-login-header">
+			<h1>Staff Sign In</h1>
+		</header>
+		<div class="staff-login-body">
+			<section class="staff-login-panel">
+				{#if authChecked}
+					<form class="staff-login-form" on:submit={handleLogin}>
+						<label>
+							Username
+							<input
+								type="text"
+								autocomplete="username"
+								bind:value={loginUsername}
+								disabled={loginBusy}
+							/>
+						</label>
+						<label>
+							Password
+							<input
+								type="password"
+								autocomplete="current-password"
+								bind:value={loginPassword}
+								disabled={loginBusy}
+							/>
+						</label>
+						{#if loginError}
+							<p class="staff-login-error">{loginError}</p>
+						{/if}
+						<button
+							type="submit"
+							class="add-to-cart-button staff-login-submit"
+							disabled={loginBusy || !loginUsername.trim() || !loginPassword}
+						>
+							{loginBusy ? 'Signing in…' : 'Sign In'}
+						</button>
+					</form>
+				{:else}
+					<p class="staff-muted">Loading…</p>
+				{/if}
+			</section>
+		</div>
 	{:else}
 	<header class="staff-bar">
 		<div class="staff-bar-filters" class:staff-bar-filters-hidden={hideBarFilters}>
@@ -1325,8 +1435,37 @@
 										<span
 											class="staff-status"
 											data-status={orderDisplayStatusKey(order)}
-											>{orderDisplayLabel(order)}</span
 										>
+											{#if order.status === 'paid'}
+												<span class="staff-status-paid-label">
+													Paid<span
+														class="staff-paid-check"
+														title={order.paidReason
+															? PAID_REASON_LABELS[order.paidReason]
+															: 'Paid'}
+														aria-hidden="true"
+													>
+														<svg
+															viewBox="0 0 24 24"
+															width="12"
+															height="12"
+															aria-hidden="true"
+															fill="none"
+														>
+															<path
+																d="M5 13l4 4L19 7"
+																stroke="currentColor"
+																stroke-width="2.5"
+																stroke-linecap="round"
+																stroke-linejoin="round"
+															/>
+														</svg>
+													</span>
+												</span>
+											{:else}
+												{orderDisplayLabel(order)}
+											{/if}
+										</span>
 									</div>
 									<div class="staff-card-main">
 										<span class="staff-strong">
@@ -1488,19 +1627,24 @@
 													type="button"
 													role="menuitem"
 													disabled={actionsLocked}
-													on:click={() =>
-														markNotified(
-															selectedOrder?.discordHandle.trim() ? 'discord' : 'email'
-														)}
+													on:click={() => {
+														if (selectedOrder?.discordHandle.trim()) {
+															closeStatusMenu();
+															openDiscordNotify();
+														} else {
+															void markNotified('email');
+														}
+													}}
 												>
 													{selectedOrder.discordHandle.trim()
-														? 'Notified On Discord'
-														: 'Notified Via Email Only'}
+														? 'Notify on Discord'
+														: 'Mark as Notified'}
 												</button>
 											{/if}
 											<button
 												type="button"
 												role="menuitem"
+												class="staff-status-menu-email"
 												disabled={actionsLocked || sendingInvoice}
 												on:click={resendInvoiceFromMenu}
 											>
@@ -1582,6 +1726,7 @@
 											<button
 												type="button"
 												role="menuitem"
+												class="staff-status-menu-email"
 												disabled={actionsLocked || sendingInvoice}
 												on:click={resendInvoiceFromMenu}
 											>
@@ -1621,7 +1766,29 @@
 										aria-haspopup="menu"
 										on:click={togglePaidMenu}
 									>
-										<span>{paidMethodLabel}{paidAmountLabel ? ` · ${paidAmountLabel}` : ''}</span>
+										<span class="staff-paid-trigger-label">
+											{paidMethodLabel}<span
+												class="staff-paid-check"
+												title={paidMethodLabel}
+												aria-hidden="true"
+											>
+												<svg
+													viewBox="0 0 24 24"
+													width="14"
+													height="14"
+													aria-hidden="true"
+													fill="none"
+												>
+													<path
+														d="M5 13l4 4L19 7"
+														stroke="currentColor"
+														stroke-width="2.5"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+													/>
+												</svg>
+											</span>
+										</span>
 										<span class="staff-paid-caret" aria-hidden="true"></span>
 									</button>
 									{#if paidMenuOpen}
@@ -1640,17 +1807,6 @@
 											>
 												Order Picked Up
 											</button>
-											{#if !paidViaShopify}
-												<button
-													type="button"
-													role="menuitem"
-													class="staff-status-menu-back"
-													disabled={actionsLocked}
-													on:click={unsetPaymentType}
-												>
-													Undo Payment
-												</button>
-											{/if}
 											<button
 												type="button"
 												role="menuitem"
@@ -1699,16 +1855,7 @@
 											<button
 												type="button"
 												role="menuitem"
-												class="staff-status-menu-back"
-												disabled={actionsLocked}
-												on:click={reopenClosedOrder}
-											>
-												Re-Open Order
-											</button>
-											<button
-												type="button"
-												role="menuitem"
-												class="staff-status-menu-duplicate staff-status-menu-divider"
+												class="staff-status-menu-duplicate"
 												disabled={actionsLocked}
 												on:click={duplicateOrder}
 											>
@@ -1743,16 +1890,7 @@
 											<button
 												type="button"
 												role="menuitem"
-												class="staff-status-menu-back"
-												disabled={actionsLocked || !canReopenClosed}
-												on:click={reopenClosedOrder}
-											>
-												Re-Open Order
-											</button>
-											<button
-												type="button"
-												role="menuitem"
-												class="staff-status-menu-duplicate staff-status-menu-divider"
+												class="staff-status-menu-duplicate"
 												disabled={actionsLocked}
 												on:click={duplicateOrder}
 											>
@@ -1819,68 +1957,19 @@
 								<p class="staff-invoice-success" role="status">{invoiceSuccess}</p>
 							{/if}
 							{#if selectedOrder.discordHandle.trim()}
-								<div class="staff-notify-notice" role="status">
-									<p class="staff-notify-notice-text">
-										Copy this message and notify the customer on Discord. Then set the order to
-										Notified On Discord.
-									</p>
-									<div class="staff-notify-sample">
-										<pre class="staff-notify-message">{discordNotifyMessage(selectedOrder)}</pre>
-										<button
-											type="button"
-											class="staff-copy-icon-btn"
-											class:copied={copyFlash === 'Copied'}
-											disabled={actionsLocked}
-											aria-label={copyFlash === 'Copied' ? 'Copied' : 'Copy message'}
-											title={copyFlash === 'Copied' ? 'Copied' : 'Copy'}
-											on:click={copyDiscordNotifyMessage}
-										>
-											{#if copyFlash === 'Copied'}
-												<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
-													<path
-														d="M5 13l4 4L19 7"
-														stroke="currentColor"
-														stroke-width="2.25"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-													/>
-												</svg>
-											{:else}
-												<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
-													<rect
-														x="8"
-														y="8"
-														width="12"
-														height="12"
-														rx="2"
-														stroke="currentColor"
-														stroke-width="2"
-													/>
-													<path
-														d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-													/>
-												</svg>
-											{/if}
-										</button>
-									</div>
-								</div>
 								<button
 									type="button"
 									class="staff-confirm-btn staff-detail-action-btn"
 									data-status="notified"
 									disabled={actionsLocked}
-									on:click={() => markNotified('discord')}
+									on:click={openDiscordNotify}
 								>
-									Notified on Discord
+									Notify on Discord
 								</button>
 							{:else}
 								<p class="staff-notify-notice" role="status">
 									This customer did not provide a Discord handle. After confirming they received
-									the invoice email, use the Invoiced menu to mark Notified Via Email Only.
+									the invoice email, Mark as Notified.
 								</p>
 							{/if}
 						</div>
@@ -1899,14 +1988,27 @@
 							<ul class="staff-line-list">
 								{#each selectedOrder.items as item, lineIndex}
 									{@const qty = qtyDisplay(item)}
+									{@const lineCheckable =
+										lineItemsEditable && item.lineAction !== 'sold_out' && !actionsLocked}
+									{@const partialQtyEditing =
+										lineItemsEditable &&
+										item.lineAction === 'partial' &&
+										partialQtyEditingIndex === lineIndex}
 									<li
 										class="staff-line"
 										class:staff-row-sold-out={item.lineAction === 'sold_out'}
-										class:staff-row-partial={item.lineAction === 'partial'}
+										class:staff-row-collected={
+											lineItemsEditable &&
+											item.collected &&
+											item.lineAction !== 'sold_out'
+										}
 										role="row"
 									>
 										{#if !lineItemsHardLocked}
-											<label class="staff-line-col-collected">
+											<label
+												class="staff-line-col-collected"
+												class:staff-line-checkable={lineCheckable}
+											>
 												{#if item.lineAction !== 'sold_out'}
 													<input
 														type="checkbox"
@@ -1922,7 +2024,20 @@
 											</label>
 										{/if}
 
-										<div class="staff-line-col-item staff-line-body">
+										<div
+											class="staff-line-col-item staff-line-body"
+											class:staff-line-checkable={lineCheckable}
+											role={lineCheckable ? 'button' : undefined}
+											tabindex={lineCheckable ? 0 : undefined}
+											on:click={() => toggleLineCollectedFromItem(lineIndex, item)}
+											on:keydown={(event) => {
+												if (!lineCheckable) return;
+												if (event.key === 'Enter' || event.key === ' ') {
+													event.preventDefault();
+													toggleLineCollectedFromItem(lineIndex, item);
+												}
+											}}
+										>
 											<div class="staff-strong">{item.title}</div>
 											<div class="staff-muted">
 												{item.productCode || 'No code'} · {item.artist}
@@ -1931,17 +2046,60 @@
 												<div class="staff-sold-out-label">Sold out</div>
 											{:else if item.lineAction === 'partial'}
 												<div class="staff-partial-label">
-													Partially Collected{#if item.collectedQuantity != null}
-														({item.collectedQuantity})
-													{/if}
+													{item.collected ? 'Partially Collected' : 'Quantity Updated'}
 												</div>
 											{:else if lineItemsHardLocked && item.collected}
 												<div class="staff-partial-label">Collected</div>
 											{/if}
 										</div>
 
-										<div class="staff-line-col-qty" aria-label={`Quantity ${qty.effective}`}>
-											{#if qty.adjusted}
+										<div
+											class="staff-line-col-qty"
+											class:staff-line-col-qty-editing={partialQtyEditing}
+											aria-label={`Quantity ${qty.effective}`}
+										>
+											{#if item.lineAction === 'partial' && lineItemsEditable}
+												<span class="staff-qty-original">{item.quantity}</span>
+												{#if partialQtyEditing}
+													<input
+														bind:this={partialQtyInputEl}
+														type="number"
+														class="staff-partial-qty-input"
+														min="0"
+														max={item.quantity}
+														inputmode="numeric"
+														disabled={actionsLocked}
+														bind:value={partialQtyDraft}
+														aria-label={`Collected quantity for ${item.title}`}
+														on:click|stopPropagation
+														on:keydown={(event) => {
+															if (event.key === 'Enter') {
+																event.preventDefault();
+																void savePartialQty(lineIndex);
+															}
+														}}
+													/>
+													<button
+														type="button"
+														class="staff-partial-qty-save"
+														disabled={actionsLocked}
+														on:click|stopPropagation={() => savePartialQty(lineIndex)}
+													>
+														Save
+													</button>
+												{:else}
+													<button
+														type="button"
+														class="staff-qty-effective staff-qty-edit-btn"
+														disabled={actionsLocked}
+														aria-label={`Edit collected quantity for ${item.title}`}
+														on:click|stopPropagation={() =>
+															startPartialQtyEdit(lineIndex, item)}
+													>
+														{item.collectedQuantity ?? qty.effective}
+													</button>
+												{/if}
+											{:else if qty.adjusted}
 												<span class="staff-qty-original">{qty.original}</span>
 												<span class="staff-qty-effective">{qty.effective}</span>
 											{:else}
@@ -1982,42 +2140,32 @@
 															<button
 																type="button"
 																role="menuitem"
-																class:active={item.lineAction === 'partial'}
+																class:staff-line-menu-undo={item.lineAction === 'partial'}
 																disabled={actionsLocked}
 																on:click={() =>
 																	chooseLineAction(lineIndex, 'partial', item.lineAction)}
 															>
-																Partially Collected
+																{item.lineAction === 'partial'
+																	? item.collected
+																		? 'Undo Partially Collected'
+																		: 'Undo Quantity Update'
+																	: 'Partially Collected'}
 															</button>
 															<button
 																type="button"
 																role="menuitem"
-																class:active={item.lineAction === 'sold_out'}
+																class:staff-line-menu-undo={item.lineAction === 'sold_out'}
 																disabled={actionsLocked}
 																on:click={() =>
 																	chooseLineAction(lineIndex, 'sold_out', item.lineAction)}
 															>
-																Mark As Sold Out
+																{item.lineAction === 'sold_out'
+																	? 'Undo Sold Out'
+																	: 'Mark As Sold Out'}
 															</button>
 														</div>
 													{/if}
 												</div>
-												{#if item.lineAction === 'partial'}
-													<label class="staff-partial-qty">
-														<span class="staff-line-mobile-label">Collected qty</span>
-														<input
-															type="number"
-															min="0"
-															max={item.quantity}
-															inputmode="numeric"
-															disabled={actionsLocked}
-															value={item.collectedQuantity ?? ''}
-															aria-label={`Collected quantity for ${item.title}`}
-															on:change={(event) =>
-																setCollectedQuantity(lineIndex, event.currentTarget.value)}
-														/>
-													</label>
-												{/if}
 											</div>
 										{/if}
 									</li>
@@ -2043,7 +2191,29 @@
 						{/if}
 					</div>
 
-					{#if selectedOrder.status === 'invoiced' || selectedOrder.status === 'notified'}
+					{#if selectedOrder.status === 'invoiced'}
+						{#if selectedOrder.discordHandle.trim()}
+							<button
+								type="button"
+								class="staff-confirm-btn staff-detail-action-btn"
+								data-status="notified"
+								disabled={actionsLocked}
+								on:click={openDiscordNotify}
+							>
+								Notify on Discord
+							</button>
+						{:else}
+							<button
+								type="button"
+								class="staff-confirm-btn staff-detail-action-btn"
+								data-status="notified"
+								disabled={actionsLocked}
+								on:click={() => markNotified('email')}
+							>
+								Mark as Notified
+							</button>
+						{/if}
+					{:else if selectedOrder.status === 'notified'}
 						<button
 							type="button"
 							class="staff-confirm-btn staff-detail-action-btn staff-refresh-payment-btn"
@@ -2120,49 +2290,147 @@
 			</div>
 		</div>
 	{:else}
-		<section class="staff-panel">
-			<p class="staff-muted staff-inventory-hint">
-				Server inventory ({inventory.length} products).
-			</p>
+		<section class="staff-panel staff-inventory-panel">
 			{#if loading && !inventory.length}
-				<p class="staff-muted">Loading inventory…</p>
+				<p class="staff-muted staff-inventory-status">Loading inventory…</p>
 			{:else if !inventory.length}
-				<p class="staff-muted">No inventory items match.</p>
+				<p class="staff-muted staff-inventory-status">No inventory items match.</p>
 			{:else}
-				<ul class="staff-card-list">
-					{#each inventory as item}
-						<li class="staff-inv-card" class:staff-row-sold-out={item.soldOut}>
-							<div class="staff-card-top">
-								<span class="staff-strong">{item.productCode || '—'}</span>
-								{#if item.soldOut}
-									<span class="staff-sold-out-label">Sold out</span>
-								{:else}
-									<span class="staff-muted">Available</span>
-								{/if}
-							</div>
-							<div class="staff-strong">{item.title}</div>
-							<div class="staff-muted">
-								{item.shopName} · {item.itemType} · {formatCents(item.priceCents)}
-							</div>
-							<div class="staff-inv-meta">
-								<span>{item.productDisplay}</span>
-								<span>Qty {item.quantity == null ? '—' : item.quantity}</span>
-							</div>
-							<button
-								type="button"
-								class="staff-confirm-btn staff-sold-out-toggle"
-								disabled={savingSoldOutId === item.id}
-								on:click={() => toggleSoldOut(item)}
-							>
-								{savingSoldOutId === item.id
-									? 'Saving…'
-									: item.soldOut
-										? 'Mark Available'
-										: 'Mark Sold Out'}
-							</button>
-						</li>
-					{/each}
-				</ul>
+				<div class="staff-inventory">
+					<table class="staff-inventory-table min-w-full">
+						<colgroup>
+							<col class="col-artist" />
+							<col class="col-code" />
+							<col class="col-product" />
+							<col class="col-cad" />
+							<col class="col-cart" />
+						</colgroup>
+						<thead>
+							<tr class="col-sizer">
+								<th class="artist-col"></th>
+								<th class="product-code-col"></th>
+								<th class="product-col"></th>
+								<th class="cad-col"></th>
+								<th class="cart-col"></th>
+							</tr>
+						</thead>
+						{#each inventoryGroups as group}
+							<tbody>
+								<tr class="artist-divider">
+									<td colspan="5">
+										<ArtistGroupHeading artist={group.shop} />
+									</td>
+								</tr>
+								{#each group.items as item, i}
+									<tr class:stripe-alt={i % 2 === 1} class:staff-inv-sold-out={item.soldOut}>
+										<td>
+											<span class:small-text={(item.artistName || '').length > 15}
+												>{item.artistName || '—'}</span
+											>
+										</td>
+										<td class="font-bold">
+											{#if isMerchTableInventory(item)}
+												{#if (item.productCode ?? '').trim()}
+													<div class="merch-table-code">{item.productCode}</div>
+												{/if}
+												<em class="unique-item-note">*Merch Table</em>
+											{:else}
+												{item.productCode || '—'}
+											{/if}
+										</td>
+										<td>
+											<div class="font-bold">{item.title}</div>
+											{#if item.itemType}
+												<div class="text-sm text-gray-600">{item.itemType}</div>
+											{/if}
+										</td>
+										<td class="cad-col font-bold">
+											<div class="price-cad">{formatCents(item.priceCents)}</div>
+										</td>
+										<td class="cart-cell">
+											<button
+												type="button"
+												class="add-to-cart-button staff-inv-sold-out-btn"
+												class:is-added={item.soldOut}
+												disabled={savingSoldOutId === item.id}
+												on:click={() => toggleSoldOut(item)}
+											>
+												{#if savingSoldOutId === item.id}
+													Saving…
+												{:else if item.soldOut}
+													<span class="add-to-cart-label-full">Mark as Available</span>
+													<span class="add-to-cart-label-short">Available</span>
+												{:else}
+													<span class="add-to-cart-label-full">Mark as Sold Out</span>
+													<span class="add-to-cart-label-short">Sold Out</span>
+												{/if}
+											</button>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						{/each}
+					</table>
+
+					<div class="staff-inventory-mobile mobile-items">
+						{#each inventoryGroups as group}
+							<section class="mobile-artist-group">
+								<div class="mobile-artist-divider">
+									<ArtistGroupHeading artist={group.shop} />
+								</div>
+								{#each group.items as item, i}
+									<div
+										class="mobile-item"
+										class:stripe-alt={i % 2 === 1}
+										class:staff-inv-sold-out={item.soldOut}
+									>
+										<div class="mobile-left">
+											{#if isMerchTableInventory(item)}
+												{#if (item.productCode ?? '').trim()}
+													<div class="mobile-product-code merch-table-code">{item.productCode}</div>
+												{/if}
+												<em class="unique-item-note">*Merch Table</em>
+											{:else}
+												<div class="mobile-product-code">{item.productCode || '—'}</div>
+											{/if}
+										</div>
+										<div class="mobile-center">
+											<div class="mobile-item-name">{item.title}</div>
+											{#if (item.artistName ?? '').trim()}
+												<div class="mobile-artist">By {item.artistName}</div>
+											{/if}
+											{#if item.itemType}
+												<div class="mobile-item-type">{item.itemType}</div>
+											{/if}
+										</div>
+										<div class="mobile-prices">
+											<div class="mobile-price-cad">{formatCents(item.priceCents)}</div>
+										</div>
+										<div class="mobile-action">
+											<button
+												type="button"
+												class="add-to-cart-button staff-inv-sold-out-btn"
+												class:is-added={item.soldOut}
+												disabled={savingSoldOutId === item.id}
+												on:click={() => toggleSoldOut(item)}
+											>
+												{#if savingSoldOutId === item.id}
+													Saving…
+												{:else if item.soldOut}
+													<span class="add-to-cart-label-full">Mark as Available</span>
+													<span class="add-to-cart-label-short">Available</span>
+												{:else}
+													<span class="add-to-cart-label-full">Mark as Sold Out</span>
+													<span class="add-to-cart-label-short">Sold Out</span>
+												{/if}
+											</button>
+										</div>
+									</div>
+								{/each}
+							</section>
+						{/each}
+					</div>
+				</div>
 			{/if}
 		</section>
 	{/if}
@@ -2252,6 +2520,106 @@
 		</div>
 	{/if}
 
+	{#if discordNotifyOpen && selectedOrder?.discordHandle.trim()}
+		<div class="staff-confirm-overlay" role="presentation">
+			<button
+				type="button"
+				class="staff-confirm-backdrop"
+				aria-label="Close Discord notify"
+				on:click={closeDiscordNotify}
+			></button>
+			<div
+				class="staff-confirm-dialog staff-discord-notify-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="staff-discord-notify-title"
+			>
+				<button
+					type="button"
+					class="staff-confirm-close"
+					aria-label="Close"
+					on:click={closeDiscordNotify}
+				>
+					×
+				</button>
+				<p id="staff-discord-notify-title" class="staff-confirm-message staff-confirm-title">
+					Notify on Discord
+				</p>
+				<div class="staff-notify-sample">
+					<pre class="staff-notify-message">{discordNotifyMessage(selectedOrder)}</pre>
+					<button
+						type="button"
+						class="staff-copy-icon-btn"
+						class:copied={copyFlash === 'Copied'}
+						disabled={actionsLocked}
+						aria-label={copyFlash === 'Copied' ? 'Copied' : 'Copy message'}
+						title={copyFlash === 'Copied' ? 'Copied' : 'Copy'}
+						on:click={copyDiscordNotifyMessage}
+					>
+						{#if copyFlash === 'Copied'}
+							<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
+								<path
+									d="M5 13l4 4L19 7"
+									stroke="currentColor"
+									stroke-width="2.25"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						{:else}
+							<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
+								<rect
+									x="8"
+									y="8"
+									width="12"
+									height="12"
+									rx="2"
+									stroke="currentColor"
+									stroke-width="2"
+								/>
+								<path
+									d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						{/if}
+					</button>
+				</div>
+				<div class="staff-confirm-actions staff-discord-notify-actions">
+					<button
+						type="button"
+						class="staff-confirm-btn staff-confirm-btn-secondary staff-discord-notify-cancel"
+						disabled={actionsLocked}
+						on:click={closeDiscordNotify}
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						class="staff-confirm-btn staff-discord-notify-confirm"
+						data-status="notified"
+						disabled={actionsLocked}
+						on:click={() => markNotified('discord')}
+					>
+						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
+							<path
+								d="M5 13l4 4L19 7"
+								stroke="currentColor"
+								stroke-width="2.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						Customer Notified!
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	{#if cancelConfirmOpen}
 		<div class="staff-confirm-overlay" role="presentation">
 			<button
@@ -2266,11 +2634,11 @@
 				aria-modal="true"
 				aria-labelledby="staff-cancel-confirm-title"
 			>
-				<p id="staff-cancel-confirm-title" class="staff-confirm-message">
+				<p id="staff-cancel-confirm-title" class="staff-confirm-message staff-confirm-title">
 					Are you sure?
 				</p>
 				<p class="staff-confirm-detail">
-					Are you sure you want to cancel this order? This will not undo any payments or
+					Are you sure you want to close this order? This will not undo any payments or
 					emails that have already been sent.
 				</p>
 				<div class="staff-confirm-actions">
@@ -2296,25 +2664,28 @@
 		</div>
 	{/if}
 
-	{#if cashPaidConfirmOpen}
+	{#if paidAmountConfirmOpen && pendingPaidReason}
 		<div class="staff-confirm-overlay" role="presentation">
 			<button
 				type="button"
 				class="staff-confirm-backdrop"
-				aria-label="Cancel cash payment"
-				on:click={closeCashPaidConfirm}
+				aria-label="Cancel payment confirmation"
+				on:click={closePaidAmountConfirm}
 			></button>
 			<div
 				class="staff-confirm-dialog"
 				role="dialog"
 				aria-modal="true"
-				aria-labelledby="staff-cash-paid-confirm-title"
+				aria-labelledby="staff-paid-amount-confirm-title"
 			>
-				<p id="staff-cash-paid-confirm-title" class="staff-confirm-message">
-					Cash received
+				<p
+					id="staff-paid-amount-confirm-title"
+					class="staff-confirm-message staff-confirm-title"
+				>
+					{paidConfirmTitle(pendingPaidReason)}
 				</p>
 				<p class="staff-confirm-detail">
-					Enter the amount of cash received for this order.
+					{paidConfirmDetail(pendingPaidReason)}
 					{#if selectedOrder}
 						Order total is {formatCents(collectedTotalCents(selectedOrder))}.
 					{/if}
@@ -2322,38 +2693,38 @@
 				<label class="staff-cash-amount-label">
 					Amount (CAD)
 					<input
-						bind:this={cashAmountInputEl}
+						bind:this={paidAmountInputEl}
 						type="text"
 						inputmode="decimal"
 						autocomplete="off"
 						class="staff-cash-amount-input"
-						bind:value={cashAmountDraft}
+						bind:value={paidAmountDraft}
 						disabled={actionsLocked}
 						on:keydown={(event) => {
 							if (event.key === 'Enter') {
 								event.preventDefault();
-								void confirmCashPaid();
+								void confirmManualPaid();
 							}
 						}}
 					/>
 				</label>
-				<div class="staff-confirm-actions">
+				<div class="staff-confirm-actions staff-paid-amount-actions">
 					<button
 						type="button"
-						class="staff-confirm-btn staff-confirm-btn-secondary"
+						class="staff-confirm-btn staff-confirm-btn-secondary staff-paid-amount-cancel"
 						disabled={actionsLocked}
-						on:click={closeCashPaidConfirm}
+						on:click={closePaidAmountConfirm}
 					>
 						Cancel
 					</button>
 					<button
 						type="button"
-						class="staff-confirm-btn"
+						class="staff-confirm-btn staff-paid-amount-confirm"
 						data-status="paid"
-						disabled={actionsLocked || parseCashAmountToCents(cashAmountDraft) == null}
-						on:click={confirmCashPaid}
+						disabled={actionsLocked || parsePaidAmountToCents(paidAmountDraft) == null}
+						on:click={confirmManualPaid}
 					>
-						Mark Paid via Cash
+						{paidConfirmActionLabel(pendingPaidReason)}
 					</button>
 				</div>
 			</div>

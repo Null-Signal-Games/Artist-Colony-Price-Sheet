@@ -472,10 +472,12 @@
 							{#if isNotesOnlyItem(row)}
 								<div class="mobile-center notes-only-mobile">
 									<div class="mobile-item-name notes-only-text">{row[productTitleKey]}</div>
+									{#if (row[artistColumnKey] ?? '').trim()}
+										<div class="mobile-artist">By {row[artistColumnKey]}</div>
+									{/if}
 									{#if row['Notes']}
 										<div class="mobile-item-type">{row['Notes']}</div>
 									{/if}
-									<div class="mobile-artist">{row[artistColumnKey]}</div>
 								</div>
 							{:else}
 								<div class="mobile-left">
@@ -490,8 +492,10 @@
 								</div>
 								<div class="mobile-center">
 									<div class="mobile-item-name">{row[productTitleKey]}</div>
+									{#if (row[artistColumnKey] ?? '').trim()}
+										<div class="mobile-artist">By {row[artistColumnKey]}</div>
+									{/if}
 									<div class="mobile-item-type">{row[productTypeKey]}</div>
-									<div class="mobile-artist">{row[artistColumnKey]}</div>
 								</div>
 								<div class="mobile-prices">
 									<div class="mobile-price-cad">{row[priceKey]}</div>

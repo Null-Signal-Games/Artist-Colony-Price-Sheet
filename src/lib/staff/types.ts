@@ -93,10 +93,10 @@ export const PAID_REASON_LABELS: Record<PaidReason, string> = {
 };
 
 export const PAY_ACTION_LABELS: Record<PaidReason, string> = {
-	shopify: 'Pay Via Shopify Invoice',
-	credit_card: 'Pay Via Credit Card',
-	paypal: 'Pay Via PayPal',
-	cash: 'Pay Via Cash'
+	shopify: 'Pay via Shopify Invoice',
+	credit_card: 'Pay via Credit Card',
+	paypal: 'Pay via PayPal',
+	cash: 'Pay via Cash'
 };
 
 export type OrderLineAction = '' | 'partial' | 'sold_out';

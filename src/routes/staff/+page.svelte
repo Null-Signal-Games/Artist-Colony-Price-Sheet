@@ -323,7 +323,6 @@
 		partialQtyEditingIndex = null;
 		partialQtyDraft = '';
 		discordNotifyOpen = false;
-		syncNotice = '';
 		try {
 			selectedOrder = await staffApi.getOrder(orderId);
 			if (!selectedOrder) {
@@ -365,7 +364,6 @@
 		partialQtyDraft = '';
 		discordNotifyOpen = false;
 		error = '';
-		syncNotice = '';
 	}
 
 	async function setStatus(
@@ -421,12 +419,13 @@
 						notesDraft = refreshed.staffNotes ?? notesDraft;
 						await refreshOrdersList();
 					}
+					if (selectedOrder?.status === 'paid') {
+						error = '';
+						return;
+					}
 				} catch {
 					/* keep previous selectedOrder */
 				}
-				error = '';
-				syncNotice = 'Order is syncing with Shopify in the background…';
-				return;
 			}
 			error = message;
 		} finally {
@@ -471,7 +470,6 @@
 		if (!selectedOrder || actionsLocked) return false;
 		if (selectedOrder.status !== 'notified') return false;
 		error = '';
-		syncNotice = '';
 		const amountCents = paidAmountCents ?? collectedTotalCents(selectedOrder);
 		await setStatus('paid', {
 			paidReason: reason,
@@ -490,7 +488,7 @@
 		}
 		closePaidMenu();
 		closeStatusMenu();
-		return Boolean(syncNotice);
+		return false;
 	}
 
 	function parsePaidAmountToCents(raw: string): number | null {
@@ -522,7 +520,6 @@
 		closeStatusMenu();
 		closePaidMenu();
 		error = '';
-		syncNotice = '';
 		pendingPaidReason = reason;
 		const suggested = collectedTotalCents(selectedOrder);
 		paidAmountDraft = (suggested / 100).toFixed(2);
@@ -842,7 +839,7 @@
 
 	function discordNotifyMessage(order: Order) {
 		const handle = order.discordHandle.trim().replace(/^@/, '');
-		return `@${handle} Your Artist Colony Invoice has been emailed to you. Please pay ASAP.`;
+		return `@${handle} Artist Colony Invoice #${order.orderId} has been emailed to you. Please pay ASAP.`;
 	}
 
 	async function copyDiscordNotifyMessage() {
@@ -911,7 +908,10 @@
 					'in_person',
 					staffMeta()
 				);
-				invoiceSuccess = `${result.message} Marked Notified in Person.`;
+				const notifiedNote = 'Marked Notified in Person.';
+				invoiceSuccess = /marked notified/i.test(result.message)
+					? result.message
+					: `${result.message} ${notifiedNote}`;
 			}
 			await refreshOrdersList();
 		} catch (err) {
@@ -1499,19 +1499,6 @@
 	{#if error}
 		<p class="staff-error" role="alert">{error}</p>
 	{/if}
-	{#if syncNotice}
-		<p class="staff-sync-notice" role="status">
-			<span>{syncNotice}</span>
-			<button
-				type="button"
-				class="staff-sync-refresh"
-				disabled={syncRefreshing || actionsLocked}
-				on:click={refreshOrderAfterSync}
-			>
-				{syncRefreshing ? 'Refreshing…' : 'Refresh'}
-			</button>
-		</p>
-	{/if}
 
 	{#if tab === 'orders'}
 		<div class="staff-split" class:staff-split-detail={!!selectedOrder}>
@@ -2056,7 +2043,7 @@
 					</div>
 
 					{#if selectedOrder.status === 'invoiced' && !selectedOrder.merchTableOrder}
-						<div class="staff-notify-block">
+						<div class="staff-detail-pre-actions">
 							{#if invoiceSuccess}
 								<p class="staff-invoice-success" role="status">{invoiceSuccess}</p>
 							{/if}
@@ -2078,7 +2065,69 @@
 							{/if}
 						</div>
 					{:else if invoiceSuccess}
-						<p class="staff-invoice-success" role="status">{invoiceSuccess}</p>
+						<div class="staff-detail-pre-actions">
+							<p class="staff-invoice-success" role="status">{invoiceSuccess}</p>
+						</div>
+					{/if}
+
+					{#if selectedOrder.status === 'prepared'}
+						<div class="staff-detail-pre-actions staff-detail-pre-actions-spaced">
+							<button
+								type="button"
+								class="staff-confirm-btn staff-detail-action-btn"
+								data-status="invoiced"
+								disabled={actionsLocked || sendingInvoice}
+								on:click={sendInvoiceFromMenu}
+							>
+								{sendingInvoice ? 'Sending Invoice…' : 'Send Invoice'}
+							</button>
+						</div>
+					{:else if selectedOrder.status === 'paid'}
+						<div class="staff-detail-pre-actions staff-detail-pre-actions-spaced">
+							<button
+								type="button"
+								class="staff-confirm-btn staff-detail-action-btn"
+								data-status="paid"
+								disabled={actionsLocked}
+								on:click={markOrderPickedUp}
+							>
+								Order Picked Up
+							</button>
+						</div>
+					{:else if selectedOrder.status === 'notified'}
+						<div class="staff-detail-pre-actions staff-detail-pre-actions-spaced">
+							<button
+								type="button"
+								class="staff-confirm-btn staff-detail-action-btn staff-refresh-payment-btn"
+								on:click={() => window.location.reload()}
+							>
+								<span>Refresh Order Payment Status</span>
+								<svg
+									class="staff-refresh-icon"
+									viewBox="0 -3 24 27"
+									width="20"
+									height="20"
+									aria-hidden="true"
+									fill="none"
+									overflow="visible"
+								>
+									<path
+										d="M20.5 12a8.5 8.5 0 1 1-4.5-7.2"
+										stroke="currentColor"
+										stroke-width="2.25"
+										stroke-linecap="round"
+									/>
+									<path
+										d="M20.5 3.5v7.5H13"
+										stroke="currentColor"
+										stroke-width="2.25"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										transform="translate(-2 -4.5) rotate(-20 20.5 11)"
+									/>
+								</svg>
+							</button>
+						</div>
 					{/if}
 
 					<div class="staff-line-section">
@@ -2295,71 +2344,36 @@
 						{/if}
 					</div>
 
-					{#if selectedOrder.status === 'invoiced'}
-						{#if selectedOrder.discordHandle.trim()}
-							<button
-								type="button"
-								class="staff-confirm-btn staff-detail-action-btn"
-								data-status="notified"
-								disabled={actionsLocked}
-								on:click={openDiscordNotify}
-							>
-								Notify on Discord
-							</button>
-						{:else}
-							<button
-								type="button"
-								class="staff-confirm-btn staff-detail-action-btn"
-								data-status="notified"
-								disabled={actionsLocked}
-								on:click={() => markNotified('email')}
-							>
-								Mark as Notified
-							</button>
-						{/if}
-					{:else if selectedOrder.status === 'notified'}
-						<button
-							type="button"
-							class="staff-confirm-btn staff-detail-action-btn staff-refresh-payment-btn"
-							on:click={() => window.location.reload()}
-						>
-							Refresh Order Payment Status
-						</button>
-					{/if}
+					{#if (selectedOrder.status === 'invoiced' && !selectedOrder.discordHandle.trim()) ||
+						selectedOrder.status === 'new'}
+						<div class="staff-detail-post-actions">
+							{#if selectedOrder.status === 'invoiced' && !selectedOrder.discordHandle.trim()}
+								<button
+									type="button"
+									class="staff-confirm-btn staff-detail-action-btn"
+									data-status="notified"
+									disabled={actionsLocked}
+									on:click={() => markNotified('email')}
+								>
+									Mark as Notified
+								</button>
+							{/if}
 
-					{#if selectedOrder.status === 'new'}
-						<button
-							type="button"
-							class="staff-confirm-btn staff-detail-action-btn"
-							data-status="prepared"
-							disabled={actionsLocked || !canSelectStatus('prepared')}
-							title={allLinesReadyForPrepare
-								? undefined
-								: 'Check off every line (or mark sold out) before preparing'}
-							on:click={requestMarkPrepared}
-						>
-							Order is Prepared!
-						</button>
-					{:else if selectedOrder.status === 'prepared'}
-						<button
-							type="button"
-							class="staff-confirm-btn staff-detail-action-btn"
-							data-status="invoiced"
-							disabled={actionsLocked || sendingInvoice}
-							on:click={sendInvoiceFromMenu}
-						>
-							{sendingInvoice ? 'Sending Invoice…' : 'Send Invoice'}
-						</button>
-					{:else if selectedOrder.status === 'paid'}
-						<button
-							type="button"
-							class="staff-confirm-btn staff-detail-action-btn"
-							data-status="paid"
-							disabled={actionsLocked}
-							on:click={markOrderPickedUp}
-						>
-							Order Picked Up
-						</button>
+							{#if selectedOrder.status === 'new'}
+								<button
+									type="button"
+									class="staff-confirm-btn staff-detail-action-btn"
+									data-status="prepared"
+									disabled={actionsLocked || !canSelectStatus('prepared')}
+									title={allLinesReadyForPrepare
+										? undefined
+										: 'Check off every line (or mark sold out) before preparing'}
+									on:click={requestMarkPrepared}
+								>
+									Order is Prepared!
+								</button>
+							{/if}
+						</div>
 					{/if}
 
 					<label class="staff-notes">
@@ -2708,6 +2722,9 @@
 				</button>
 				<p id="staff-discord-notify-title" class="staff-confirm-message staff-confirm-title">
 					Notify on Discord
+				</p>
+				<p class="staff-discord-notify-hint">
+					Copy this message and notify the user in discord.
 				</p>
 				<div class="staff-notify-sample">
 					<pre class="staff-notify-message">{discordNotifyMessage(selectedOrder)}</pre>

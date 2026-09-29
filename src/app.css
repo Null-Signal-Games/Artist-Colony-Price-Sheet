@@ -3156,6 +3156,7 @@ table tbody tr.notes-only-row.stripe-alt,
 	overflow-y: auto;
 	-webkit-overflow-scrolling: touch;
 	padding-bottom: env(safe-area-inset-bottom, 0px);
+	background-color: #ffffff;
 }
 
 .staff-panel {
@@ -3895,7 +3896,7 @@ a.staff-shopify-order:hover {
 .staff-history-list {
 	list-style: none;
 	margin: 0;
-	padding: 0;
+	padding: 0 0 12px;
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -4378,19 +4379,55 @@ a.staff-shopify-order:hover {
 }
 
 .staff-detail-action-btn {
-	margin: 24px 0 14px;
+	margin: 0;
 }
 
-.staff-refresh-payment-btn {
+.staff-detail-pre-actions,
+.staff-detail-post-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.staff-detail-pre-actions {
+	margin: 0;
+}
+
+.staff-detail-pre-actions-spaced {
+	margin-bottom: 16px;
+}
+
+.staff-detail-post-actions {
+	margin: 16px 0 0;
+}
+
+.staff-detail-post-actions .staff-detail-action-btn[data-status='prepared'] {
+	margin-bottom: 16px;
+}
+
+.staff-confirm-btn.staff-refresh-payment-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
 	border: 1px solid #ced4da;
-	background: #ffffff;
+	background: #e9ecef;
 	color: #111111;
 }
 
-.staff-refresh-payment-btn:hover:not(:disabled) {
-	background: #f8f9fa;
+.staff-confirm-btn.staff-refresh-payment-btn:hover:not(:disabled) {
+	background: #dee2e6;
 	border-color: #adb5bd;
 	filter: none;
+}
+
+.staff-confirm-btn.staff-refresh-payment-btn:active:not(:disabled) {
+	background: #ced4da;
+	filter: none;
+}
+
+.staff-refresh-icon {
+	flex-shrink: 0;
 }
 
 .staff-prepare-hint {
@@ -4693,7 +4730,7 @@ a.staff-shopify-order:hover {
 }
 
 .staff-invoice-success {
-	margin: 0 0 16px;
+	margin: 0;
 	padding: 12px;
 	border-radius: var(--staff-radius);
 	background: #edf2ff;
@@ -4701,6 +4738,10 @@ a.staff-shopify-order:hover {
 	font-weight: 600;
 	font-size: 14px;
 	line-height: 1.4;
+}
+
+.staff-detail-pre-actions > .staff-invoice-success:last-child {
+	margin-bottom: 16px;
 }
 
 .staff-notify-notice {
@@ -4720,13 +4761,6 @@ a.staff-shopify-order:hover {
 .staff-notify-notice-text {
 	margin: 0;
 	font-weight: 400;
-}
-
-.staff-notify-block {
-	margin: 4px 0 16px;
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
 }
 
 .staff-closed-block {
@@ -4752,10 +4786,21 @@ a.staff-shopify-order:hover {
 	border-radius: var(--staff-radius);
 }
 
+.staff-discord-notify-dialog.staff-confirm-dialog:has(.staff-confirm-close) .staff-confirm-message,
 .staff-discord-notify-dialog .staff-confirm-message {
 	text-align: center;
-	margin-bottom: 16px;
-	padding-right: 28px;
+	margin-bottom: 0;
+	padding: 0;
+}
+
+.staff-discord-notify-hint {
+	margin: 8px 0 16px;
+	padding: 0;
+	font-size: 14px;
+	font-weight: 400;
+	line-height: 1.4;
+	color: #333333;
+	text-align: center;
 }
 
 .staff-discord-notify-dialog .staff-notify-sample {

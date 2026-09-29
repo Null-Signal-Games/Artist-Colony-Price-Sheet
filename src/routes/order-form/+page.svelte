@@ -169,12 +169,12 @@
 
 <div class="order-form-page">
 	<header class="order-form-header">
-		<a class="back-link" href="{base}/">← View Items</a>
 		{#if staffSession}
 			<a class="title-staff-link" href="{base}/staff">STAFF</a>
 		{:else}
-			<h1>Artist Colony</h1>
+			<a class="title-brand-link" href="{base}/">Artist Colony</a>
 		{/if}
+		<a class="back-link" href="{base}/">← View Items</a>
 	</header>
 
 	<main class="order-form-main">

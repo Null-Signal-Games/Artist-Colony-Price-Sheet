@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, replaceState } from '$app/navigation';
+	import { goto, replaceState, afterNavigate } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
@@ -23,6 +23,7 @@
 		logoutStaff,
 		StaffAuthError,
 		staffApi,
+		inventoryItemId,
 		type ClosedReason,
 		type InventoryItem,
 		type Order,
@@ -56,7 +57,15 @@
 
 	type Tab = 'orders' | 'inventory';
 
-	let tab: Tab = 'orders';
+	function tabFromPath(pathname: string): Tab {
+		return pathname.replace(/\/$/, '').endsWith('/inventory') ? 'inventory' : 'orders';
+	}
+
+	function staffPathForTab(next: Tab) {
+		return next === 'inventory' ? `${base}/staff/inventory` : `${base}/staff`;
+	}
+
+	let tab: Tab = tabFromPath(get(page).url.pathname);
 	let loading = true;
 	let saving = false;
 	let error = '';
@@ -118,6 +127,7 @@
 
 	function syncSelectedOrderUrl(orderId: string) {
 		const url = new URL(get(page).url);
+		url.pathname = staffPathForTab('orders');
 		if (orderId) {
 			url.searchParams.set('order', orderId);
 		} else {
@@ -127,6 +137,19 @@
 		const current = `${get(page).url.pathname}${get(page).url.search}${get(page).url.hash}`;
 		if (next !== current) {
 			replaceState(next, {});
+		}
+	}
+
+	function syncTabUrl(next: Tab) {
+		const url = new URL(get(page).url);
+		url.pathname = staffPathForTab(next);
+		if (next === 'inventory') {
+			url.searchParams.delete('order');
+		}
+		const dest = `${url.pathname}${url.search}${url.hash}`;
+		const current = `${get(page).url.pathname}${get(page).url.search}${get(page).url.hash}`;
+		if (dest !== current) {
+			void goto(dest, { replaceState: true, noScroll: true, keepFocus: true });
 		}
 	}
 
@@ -340,7 +363,7 @@
 		}
 	}
 
-	async function clearSelectedOrder(options: { skipFlush?: boolean } = {}) {
+	async function clearSelectedOrder(options: { skipFlush?: boolean; skipUrl?: boolean } = {}) {
 		if (!options.skipFlush) {
 			await flushNotesIfNeeded({ quiet: true });
 		}
@@ -355,7 +378,7 @@
 		invoiceSuccess = '';
 		statusFilterOpen = false;
 		searchOpen = false;
-		syncSelectedOrderUrl('');
+		if (!options.skipUrl) syncSelectedOrderUrl('');
 		cancelConfirmOpen = false;
 		paidAmountConfirmOpen = false;
 		pendingPaidReason = null;
@@ -940,6 +963,8 @@
 
 	async function setLineAction(lineIndex: number, lineAction: OrderLineAction) {
 		if (!selectedOrder || actionsLocked || !lineItemsEditable) return;
+		const previousAction = selectedOrder.items[lineIndex]?.lineAction ?? '';
+		const lineItem = selectedOrder.items[lineIndex];
 		openLineMenuIndex = null;
 		saving = true;
 		error = '';
@@ -955,6 +980,24 @@
 				staffMeta()
 			);
 			await refreshOrdersList();
+			if (
+				lineItem &&
+				(lineAction === 'sold_out' || previousAction === 'sold_out')
+			) {
+				const itemId = inventoryItemId(lineItem.productCode, lineItem.title);
+				const soldOut = lineAction === 'sold_out';
+				try {
+					const updated = await staffApi.setProductSoldOut(itemId, soldOut);
+					inventory = inventory.map((entry) =>
+						entry.id === updated.id ? updated : entry
+					);
+				} catch (invErr) {
+					error =
+						invErr instanceof Error
+							? `Line updated, but inventory sold-out failed: ${invErr.message}`
+							: 'Line updated, but inventory sold-out failed.';
+				}
+			}
 			if (lineAction === 'partial') {
 				const qty = selectedOrder.items[lineIndex]?.collectedQuantity;
 				partialQtyEditingIndex = lineIndex;
@@ -1047,9 +1090,37 @@
 		else await loadInventory();
 	}
 
+	afterNavigate(({ to }) => {
+		if (!to) return;
+		const routeTab = to.params.tab;
+		if (routeTab && routeTab !== 'inventory') {
+			void goto(staffPathForTab('orders'), { replaceState: true, noScroll: true });
+			return;
+		}
+		const next = tabFromPath(to.url.pathname);
+		if (next === tab) return;
+		tab = next;
+		if (!authed) return;
+		if (next === 'inventory') {
+			selectedOrderId = '';
+			selectedOrder = null;
+			void loadInventory();
+		} else {
+			void loadOrders();
+		}
+	});
+
 	onMount(() => {
 		authed = Boolean(getStaffToken());
 		authChecked = true;
+		const pathTab = tabFromPath(get(page).url.pathname);
+		const routeTab = get(page).params.tab;
+		if (routeTab && routeTab !== 'inventory') {
+			void goto(staffPathForTab('orders'), { replaceState: true, noScroll: true });
+			tab = 'orders';
+		} else {
+			tab = pathTab;
+		}
 		if (authed) {
 			enableStaffSession();
 			const stored = readStoredFilterState();
@@ -1059,6 +1130,10 @@
 			inventoryQuery = stored.inventoryQuery;
 			const orderFromUrl = get(page).url.searchParams.get('order')?.trim() ?? '';
 			void (async () => {
+				if (tab === 'inventory') {
+					await loadInventory();
+					return;
+				}
 				await loadOrders();
 				if (orderFromUrl) {
 					await selectOrder(orderFromUrl);
@@ -1081,7 +1156,9 @@
 			orderSort = stored.orderSort;
 			orderQuery = stored.orderQuery;
 			inventoryQuery = stored.inventoryQuery;
-			await loadOrders();
+			tab = tabFromPath(get(page).url.pathname);
+			if (tab === 'inventory') await loadInventory();
+			else await loadOrders();
 		} catch (err) {
 			loginError = err instanceof Error ? err.message : 'Could not sign in.';
 		} finally {
@@ -1090,12 +1167,17 @@
 	}
 
 	async function switchTab(next: Tab) {
+		if (tab === next) {
+			closeMenu();
+			return;
+		}
 		tab = next;
 		menuOpen = false;
 		statusFilterOpen = false;
 		searchOpen = false;
 		soldOutMenuItemId = '';
-		if (next === 'inventory') await clearSelectedOrder();
+		if (next === 'inventory') await clearSelectedOrder({ skipFlush: true, skipUrl: true });
+		syncTabUrl(next);
 		void refresh();
 	}
 
@@ -1418,6 +1500,7 @@
 					</span>
 				</button>
 			{:else}
+				<h1 class="staff-bar-title">Inventory</h1>
 				<div
 					class="staff-search-wrap staff-search-wrap-inventory"
 					class:has-query={inventoryQuery.trim().length > 0}

@@ -713,11 +713,6 @@
 			? `https://admin.shopify.com/store/${SHOPIFY_STORE_ID}/draft_orders/${shopifyGidId(selectedOrder.shopifyDraftOrderId)}`
 			: null;
 
-	$: canReopenClosed =
-		!!selectedOrder &&
-		selectedOrder.status === 'closed' &&
-		!!statusBeforeClose(selectedOrder);
-
 	$: isPickedUp =
 		!!selectedOrder &&
 		selectedOrder.status === 'closed' &&

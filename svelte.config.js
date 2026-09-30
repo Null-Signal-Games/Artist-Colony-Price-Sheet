@@ -5,9 +5,12 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapter({ strict: false }),
+    adapter: adapter({ fallback: '404.html', strict: false }),
     paths: {
       base: '/Artist-Colony-Price-Sheet'
+    },
+    prerender: {
+      entries: ['*', '/staff/inventory']
     }
   }
 };

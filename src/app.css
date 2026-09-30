@@ -1318,6 +1318,26 @@ table tbody tr.notes-only-row.stripe-alt,
 	line-height: 1.1;
 }
 
+.order-page-title-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin: 0;
+}
+
+.order-page-title-row .order-page-title {
+	margin: 0;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.order-page-title-row .merch-table-order-check {
+	flex: 0 1 auto;
+	margin: 0;
+}
+
 .order-confirmation .order-page-title {
 	margin-bottom: 6px;
 }
@@ -1508,12 +1528,44 @@ table tbody tr.notes-only-row.stripe-alt,
 
 .order-total {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-end;
-	gap: 2px;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
 	margin-bottom: 0;
 	font-size: 16px;
 	font-weight: 700;
+}
+
+.order-total > strong {
+	margin-left: auto;
+	text-align: right;
+}
+
+.order-remove-all {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #888888;
+	font-family: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	cursor: pointer;
+	touch-action: manipulation;
+}
+
+.order-remove-all:hover:not(:disabled) {
+	color: #666666;
+}
+
+.order-remove-all:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 .order-total span {
@@ -2766,13 +2818,13 @@ table tbody tr.notes-only-row.stripe-alt,
 	flex: 1;
 	min-width: 0;
 	width: auto;
-	height: 42px;
-	min-height: 42px;
+	height: 36px;
+	min-height: 36px;
 	border: 0;
 	background: #ffffff;
-	padding: 0 12px;
+	padding: 0 10px;
 	font-family: inherit;
-	font-size: 16px;
+	font-size: 14px;
 	color: #111111;
 	box-sizing: border-box;
 	border-radius: var(--staff-radius);
@@ -2802,8 +2854,8 @@ table tbody tr.notes-only-row.stripe-alt,
 	align-items: center;
 	min-width: 0;
 	width: 100%;
-	height: 42px;
-	min-height: 42px;
+	height: 36px;
+	min-height: 36px;
 	box-sizing: border-box;
 }
 
@@ -2814,9 +2866,9 @@ table tbody tr.notes-only-row.stripe-alt,
 	padding: 0 4px 0 0;
 	font-family: 'Fjalla One', sans-serif;
 	font-weight: 400;
-	font-size: 22px;
+	font-size: 18px;
 	letter-spacing: 1px;
-	line-height: 44px;
+	line-height: 36px;
 	text-transform: uppercase;
 	color: #ffffff;
 	white-space: nowrap;
@@ -5013,7 +5065,7 @@ a.staff-shopify-order:hover {
 }
 
 .staff-inv-sold-menu-wrap.open {
-	z-index: 40;
+	z-index: 250;
 }
 
 .staff-inv-sold-trigger {
@@ -5204,6 +5256,18 @@ a.staff-shopify-order:hover {
 		display: none;
 	}
 
+	.staff-bar-title {
+		font-size: 24px;
+		line-height: 44px;
+	}
+
+	.staff-bar-search {
+		font-size: 14px;
+		height: 42px;
+		min-height: 42px;
+		padding: 0 12px;
+	}
+
 	.staff-search-field,
 	.staff-bar:has(.staff-search-wrap.open) .staff-search-field {
 		display: flex;
@@ -5212,20 +5276,14 @@ a.staff-shopify-order:hover {
 		width: auto;
 		min-width: 140px;
 		max-width: 250px;
+		height: 42px;
+		min-height: 42px;
 	}
 
 	.staff-search-wrap-inventory .staff-search-field {
 		flex: 0 1 200px;
 		max-width: 200px;
 		margin-left: 16px;
-	}
-
-	.staff-bar-title {
-		font-size: 24px;
-	}
-
-	.staff-bar-search {
-		font-size: 14px;
 	}
 
 	.staff-sort-btn {

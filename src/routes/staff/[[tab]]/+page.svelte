@@ -46,6 +46,7 @@
 		formatMoney
 	} from '$lib/cart';
 	import { writeCheckoutDraft } from '$lib/checkoutDraft';
+	import { setSoldOutId } from '$lib/soldOut';
 	import ArtistGroupHeading from '$lib/ArtistGroupHeading.svelte';
 
 	let authed = false;
@@ -991,6 +992,7 @@
 					inventory = inventory.map((entry) =>
 						entry.id === updated.id ? updated : entry
 					);
+					setSoldOutId(updated.id, updated.soldOut);
 				} catch (invErr) {
 					error =
 						invErr instanceof Error
@@ -1272,6 +1274,7 @@
 		try {
 			const updated = await staffApi.setProductSoldOut(item.id, !item.soldOut);
 			inventory = inventory.map((entry) => (entry.id === updated.id ? updated : entry));
+			setSoldOutId(updated.id, updated.soldOut);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to update sold-out state.';
 		} finally {
@@ -2121,7 +2124,7 @@
 					</div>
 
 					{#if selectedOrder.status === 'invoiced' && !selectedOrder.merchTableOrder}
-						<div class="staff-detail-pre-actions">
+						<div class="staff-detail-pre-actions staff-detail-pre-actions-spaced">
 							{#if invoiceSuccess}
 								<p class="staff-invoice-success" role="status">{invoiceSuccess}</p>
 							{/if}
@@ -2140,6 +2143,15 @@
 									This customer did not provide a Discord handle. After confirming they received
 									the invoice email, Mark as Notified.
 								</p>
+								<button
+									type="button"
+									class="staff-confirm-btn staff-detail-action-btn"
+									data-status="notified"
+									disabled={actionsLocked}
+									on:click={() => markNotified('email')}
+								>
+									Mark as Notified
+								</button>
 							{/if}
 						</div>
 					{:else if invoiceSuccess}
@@ -2422,35 +2434,20 @@
 						{/if}
 					</div>
 
-					{#if (selectedOrder.status === 'invoiced' && !selectedOrder.discordHandle.trim()) ||
-						selectedOrder.status === 'new'}
+					{#if selectedOrder.status === 'new'}
 						<div class="staff-detail-post-actions">
-							{#if selectedOrder.status === 'invoiced' && !selectedOrder.discordHandle.trim()}
-								<button
-									type="button"
-									class="staff-confirm-btn staff-detail-action-btn"
-									data-status="notified"
-									disabled={actionsLocked}
-									on:click={() => markNotified('email')}
-								>
-									Mark as Notified
-								</button>
-							{/if}
-
-							{#if selectedOrder.status === 'new'}
-								<button
-									type="button"
-									class="staff-confirm-btn staff-detail-action-btn"
-									data-status="prepared"
-									disabled={actionsLocked || !canSelectStatus('prepared')}
-									title={allLinesReadyForPrepare
-										? undefined
-										: 'Check off every line (or mark sold out) before preparing'}
-									on:click={requestMarkPrepared}
-								>
-									Order is Prepared!
-								</button>
-							{/if}
+							<button
+								type="button"
+								class="staff-confirm-btn staff-detail-action-btn"
+								data-status="prepared"
+								disabled={actionsLocked || !canSelectStatus('prepared')}
+								title={allLinesReadyForPrepare
+									? undefined
+									: 'Check off every line (or mark sold out) before preparing'}
+								on:click={requestMarkPrepared}
+							>
+								Order is Prepared!
+							</button>
 						</div>
 					{/if}
 

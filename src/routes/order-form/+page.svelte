@@ -228,18 +228,20 @@
 			</section>
 		{:else}
 			<form class="order-details-form" on:submit|preventDefault={submitOrder}>
-				<h2 class="order-page-title">Order Form</h2>
-				{#if staffSession}
-					<label class="merch-table-order-check">
-						<input
-							type="checkbox"
-							bind:checked={merchTableOrder}
-							disabled={submitting}
-							on:change={onMerchTableChange}
-						/>
-						<span>Merch Table Order</span>
-					</label>
-				{/if}
+				<div class="order-page-title-row">
+					<h2 class="order-page-title">Order Form</h2>
+					{#if staffSession}
+						<label class="merch-table-order-check">
+							<input
+								type="checkbox"
+								bind:checked={merchTableOrder}
+								disabled={submitting}
+								on:change={onMerchTableChange}
+							/>
+							<span>Merch Table Order</span>
+						</label>
+					{/if}
+				</div>
 				<label>
 					{customerFieldsRequired ? 'Name*' : 'Name'}
 					<input
@@ -278,6 +280,14 @@
 				<section class="order-items-section">
 					<OrderItemsTable {items} editable={!submitting} />
 					<div class="order-total">
+						<button
+							type="button"
+							class="order-remove-all"
+							disabled={submitting}
+							on:click={() => cart.clear()}
+						>
+							Remove All
+						</button>
 						<strong>Total: {formatMoney(cadTotal, '$')} CAD</strong>
 					</div>
 				</section>

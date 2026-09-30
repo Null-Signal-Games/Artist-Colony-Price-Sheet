@@ -418,7 +418,7 @@
 									<div class="price-cad">{row[priceKey]}</div>
 								</td>
 								<td class="cart-cell">
-									{#if isSoldOutItem(row)}
+									{#if soldOutFlags.get(row)}
 										<span class="sold-out-label">SOLD OUT</span>
 									{:else if isMerchTableItem(row)}
 										{#if staffSession}
@@ -442,7 +442,7 @@
 												><span class="buy-merch-line">Table</span></em
 											>
 										{/if}
-									{:else if canAddToCart(row)}
+									{:else if isArtistDisplayItem(row)}
 										<button
 											type="button"
 											class="add-to-cart-button"
@@ -510,7 +510,7 @@
 									<div class="mobile-price-cad">{row[priceKey]}</div>
 								</div>
 								<div class="mobile-action">
-									{#if isSoldOutItem(row)}
+									{#if soldOutFlags.get(row)}
 										<span class="sold-out-label">SOLD OUT</span>
 									{:else if isMerchTableItem(row)}
 										{#if staffSession}
@@ -534,7 +534,7 @@
 												><span class="buy-merch-line">Table</span></em
 											>
 										{/if}
-									{:else if canAddToCart(row)}
+									{:else if isArtistDisplayItem(row)}
 										<button
 											type="button"
 											class="add-to-cart-button"

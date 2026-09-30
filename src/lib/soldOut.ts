@@ -9,15 +9,29 @@ export const SOLD_OUT_POLL_MS = 60_000;
 export const soldOutIds = writable<Set<string>>(new Set());
 
 let started = false;
+let fetchSoldOut: (() => Promise<void>) | null = null;
+
+export function setSoldOutId(id: string, soldOut: boolean) {
+	soldOutIds.update((ids) => {
+		const next = new Set(ids);
+		if (soldOut) next.add(id);
+		else next.delete(id);
+		return next;
+	});
+}
+
+export async function refreshSoldOut() {
+	if (fetchSoldOut) await fetchSoldOut();
+}
 
 // fail open errors keep the last known state
 export async function startSoldOutSync() {
 	if (!browser || started) return;
 	started = true;
 
-	const fetchSoldOut = async () => {
+	fetchSoldOut = async () => {
 		try {
-			const res = await fetch(`${apiBaseUrl()}/sold-out`);
+			const res = await fetch(`${apiBaseUrl()}/sold-out`, { cache: 'no-store' });
 			if (!res.ok) throw new Error(`status ${res.status}`);
 			const body: unknown = await res.json();
 			if (!Array.isArray(body)) throw new Error('unexpected payload');
@@ -28,5 +42,5 @@ export async function startSoldOutSync() {
 	};
 
 	void fetchSoldOut();
-	window.setInterval(fetchSoldOut, SOLD_OUT_POLL_MS);
+	window.setInterval(() => void fetchSoldOut?.(), SOLD_OUT_POLL_MS);
 }

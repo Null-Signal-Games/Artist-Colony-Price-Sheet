@@ -4419,6 +4419,11 @@ a.staff-shopify-order:hover {
 	color: #0c8599;
 }
 
+.staff-row-multi-unit {
+	background: #eef6fd;
+	border-color: #cfe4f5;
+}
+
 .staff-row-sold-out {
 	background: #f5f5f5;
 }

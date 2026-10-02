@@ -2280,6 +2280,7 @@
 										partialQtyEditingIndex === lineIndex}
 									<li
 										class="staff-line"
+										class:staff-row-multi-unit={item.quantity > 1}
 										class:staff-row-sold-out={item.lineAction === 'sold_out'}
 										class:staff-row-collected={
 											lineItemsEditable &&

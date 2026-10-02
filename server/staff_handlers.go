@@ -150,14 +150,10 @@ func (s *appServer) orderFromRow(ctx context.Context, row *orderRow, withChildre
 		}
 		for _, line := range lines {
 			item := line.Item
-			soldOut := soldOutRe.MatchString(item.Title)
+			soldOut := s.lineSoldOut(item, overrides)
 			itemType := ""
 			if catalog, ok := s.inventoryItemsByID[inventoryKey(item.ProductCode, item.Title)]; ok {
-				soldOut = catalog.SoldOut
 				itemType = catalog.ItemType
-			}
-			if override, ok := overrides[inventoryKey(item.ProductCode, item.Title)]; ok {
-				soldOut = override
 			}
 			order.Items = append(order.Items, orderItemJSON{
 				ProductCode:       item.ProductCode,
@@ -191,6 +187,46 @@ func (s *appServer) summaryFromRow(ctx context.Context, row *orderRow) (*orderJS
 func inventoryKey(code, title string) string { return code + "::" + title }
 
 var soldOutRe = regexp.MustCompile(`(?i)sold out`)
+
+func (s *appServer) lineSoldOut(item computedItem, overrides map[string]bool) bool {
+	soldOut := soldOutRe.MatchString(item.Title)
+	key := inventoryKey(item.ProductCode, item.Title)
+	if catalog, ok := s.inventoryItemsByID[key]; ok {
+		soldOut = catalog.SoldOut
+	}
+	if override, ok := overrides[key]; ok {
+		soldOut = override
+	}
+	return soldOut
+}
+
+func (s *appServer) autoMarkSoldOutLines(ctx context.Context, row *orderRow, status, actor string) error {
+	lines, err := s.db.listOrderLines(ctx, row.RowID)
+	if err != nil {
+		return err
+	}
+	overrides := s.soldOutOverrides(ctx)
+
+	indexes := []int64{}
+	history := []historyInsert{}
+	for i, line := range lines {
+		item := line.Item
+		if item.LineAction != "" || line.Collected {
+			continue
+		}
+		if !s.lineSoldOut(item, overrides) {
+			continue
+		}
+		indexes = append(indexes, int64(i))
+		history = append(history, historyInsert{
+			Kind:       "line",
+			Summary:    fmt.Sprintf("Line \u201c%s\u201d: sold out (inventory)", item.Title),
+			FromStatus: strPtr(status), ToStatus: strPtr(status),
+			StaffName: actor,
+		})
+	}
+	return s.db.markLinesSoldOut(ctx, row.RowID, indexes, history)
+}
 
 // ## AUTH
 
@@ -662,6 +698,13 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 	if toStatus == "closed" && (*req.ClosedReason == "canceled" || *req.ClosedReason == "closed") {
 		if err := s.db.clearOrderFulfillment(ctx, row.RowID); err != nil {
 			log.Printf("clear fulfillment failed: %v", err)
+		}
+	}
+
+	// staff shouldnt go hunting for stock we already know is gone
+	if toStatus == "preparing" {
+		if err := s.autoMarkSoldOutLines(ctx, row, toStatus, actor); err != nil {
+			log.Printf("auto sold-out marking failed for %s: %v", row.OrderID, err)
 		}
 	}
 

@@ -422,6 +422,42 @@ func (s *store) updateOrderLine(ctx context.Context, orderRowID, lineIndex int64
 	return tx.Commit()
 }
 
+func (s *store) markLinesSoldOut(ctx context.Context, orderRowID int64, lineIndexes []int64, history []historyInsert) error {
+	if len(lineIndexes) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, lineIndex := range lineIndexes {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE order_items SET collected = FALSE, line_action = 'sold_out',
+				collected_quantity = NULL, line_subtotal_cents = 0
+			WHERE order_id = $1
+			  AND id = (SELECT id FROM order_items WHERE order_id = $1 ORDER BY id OFFSET $2 LIMIT 1)`,
+			orderRowID, lineIndex); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE orders SET subtotal_cents = (
+			SELECT COALESCE(SUM(line_subtotal_cents), 0) FROM order_items WHERE order_id = $1
+		) WHERE id = $1`, orderRowID); err != nil {
+		return err
+	}
+
+	if len(history) > 0 {
+		if err := s.insertHistory(ctx, tx, orderRowID, history...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func nullIfEmpty(s string) any {
 	if strings.TrimSpace(s) == "" {
 		return nil

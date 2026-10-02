@@ -109,6 +109,7 @@ export type OrderItem = {
 	quantity: number; // original order quantity
 	lineSubtotalCents: number;
 	soldOut: boolean;
+	itemType: string;
 	collected: boolean;
 
   // @TODO persist these together for invoicing

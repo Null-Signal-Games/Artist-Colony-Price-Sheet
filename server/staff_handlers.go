@@ -29,6 +29,7 @@ type orderItemJSON struct {
 	Quantity          int    `json:"quantity"`
 	LineSubtotalCents int    `json:"lineSubtotalCents"`
 	SoldOut           bool   `json:"soldOut"`
+	ItemType          string `json:"itemType"`
 	Collected         bool   `json:"collected"`
 	LineAction        string `json:"lineAction"`
 	CollectedQuantity *int   `json:"collectedQuantity"`
@@ -148,8 +149,10 @@ func (s *appServer) orderFromRow(ctx context.Context, row *orderRow, withChildre
 		for _, line := range lines {
 			item := line.Item
 			soldOut := soldOutRe.MatchString(item.Title)
+			itemType := ""
 			if catalog, ok := s.inventoryItemsByID[inventoryKey(item.ProductCode, item.Title)]; ok {
 				soldOut = catalog.SoldOut
+				itemType = catalog.ItemType
 			}
 			if override, ok := overrides[inventoryKey(item.ProductCode, item.Title)]; ok {
 				soldOut = override
@@ -162,6 +165,7 @@ func (s *appServer) orderFromRow(ctx context.Context, row *orderRow, withChildre
 				Quantity:          item.Quantity,
 				LineSubtotalCents: item.LineSubtotalCents,
 				SoldOut:           soldOut,
+				ItemType:          itemType,
 				Collected:         line.Collected,
 				LineAction:        item.LineAction,
 				CollectedQuantity: line.CollectedQty,

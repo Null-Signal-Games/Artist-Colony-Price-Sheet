@@ -2282,6 +2282,9 @@
 											}}
 										>
 											<div class="staff-strong">{item.title}</div>
+											{#if item.itemType}
+												<div class="staff-muted">{item.itemType}</div>
+											{/if}
 											<div class="staff-muted">
 												{item.productCode || 'No code'} · {item.artist}
 											</div>

@@ -69,6 +69,7 @@ type orderJSON struct {
 	ShopifyInvoiceURL    *string            `json:"shopifyInvoiceUrl"`
 	ShopifyOrderID       *string            `json:"shopifyOrderId"`
 	PaidAmountCents      *int               `json:"paidAmountCents"`
+	PreparingByStaffName *string            `json:"preparingBy"`
 }
 
 type staffOrderInput struct {
@@ -138,6 +139,7 @@ func (s *appServer) orderFromRow(ctx context.Context, row *orderRow, withChildre
 		ShopifyInvoiceURL:    nullStr(row.ShopifyInvoiceURL),
 		ShopifyOrderID:       nullStr(row.ShopifyOrderID),
 		PaidAmountCents:      nullInt(row.PaidAmountCents),
+		PreparingByStaffName: nullStr(row.PreparingByStaffName),
 	}
 
 	if withChildren {
@@ -392,7 +394,6 @@ func (s *appServer) handleCreateStaffOrder(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-
 	ctx := r.Context()
 	// if _, err := s.db.getOrderByID(ctx, input.OrderID); err == nil {
 	// 	writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("Order %s already exists.", input.OrderID)})
@@ -448,12 +449,13 @@ func (s *appServer) handleCreateStaffOrder(w http.ResponseWriter, r *http.Reques
 }
 
 var allowedTransitions = map[string][]string{
-	"new":      {"prepared", "closed"},
-	"prepared": {"new", "closed"},
-	"invoiced": {"notified", "closed"},
-	"notified": {"invoiced", "paid", "closed"},
-	"paid":     {"closed", "notified"},
-	"closed":   {"new", "prepared", "invoiced", "notified", "paid"},
+	"new":       {"preparing", "prepared", "closed"},
+	"preparing": {"new", "prepared", "closed"},
+	"prepared":  {"new", "closed"},
+	"invoiced":  {"notified", "closed"},
+	"notified":  {"invoiced", "paid", "closed"},
+	"paid":      {"closed", "notified"},
+	"closed":    {"new", "prepared", "invoiced", "notified", "paid"},
 }
 
 func previousStatusBeforeClose(history []historyEntryJSON) string {
@@ -532,8 +534,8 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// state transition from 'new' to 'prepared' requires every line is marked collected or sold out
-	if fromStatus == "new" && toStatus == "prepared" {
+	// state transition to 'prepared' requires every line is marked collected or sold out
+	if (fromStatus == "new" || fromStatus == "preparing") && toStatus == "prepared" {
 		lines, err := s.db.listOrderLines(ctx, row.RowID)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not load order."})
@@ -629,15 +631,22 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 			sets = append(sets, "paid_amount_cents = $"+strconv.Itoa(len(args)+1))
 			args = append(args, *req.PaidAmountCents)
 		}
-	case "new", "prepared", "invoiced", "notified":
+	case "new", "preparing", "prepared", "invoiced", "notified":
 		sets = append(sets, "paid_reason = NULL", "paid_reason_other = NULL", "paid_amount_cents = NULL")
 	}
 
 	if toStatus == "notified" {
 		sets = append(sets, "notification_channel = $"+strconv.Itoa(len(args)+1))
 		args = append(args, *req.NotificationChannel)
-	} else if toStatus == "new" || toStatus == "prepared" || toStatus == "invoiced" {
+	} else if toStatus == "new" || toStatus == "preparing" || toStatus == "prepared" || toStatus == "invoiced" {
 		sets = append(sets, "notification_channel = NULL")
+	}
+
+	if toStatus == "preparing" {
+		sets = append(sets, "preparing_by_staff_name = $"+strconv.Itoa(len(args)+1))
+		args = append(args, actor)
+	} else {
+		sets = append(sets, "preparing_by_staff_name = NULL")
 	}
 
 	if err := s.db.updateOrderFields(ctx, row.RowID, strings.Join(sets, ", "), args, []historyInsert{{
@@ -705,7 +714,7 @@ func (s *appServer) handleUpdateOrderStatus(w http.ResponseWriter, r *http.Reque
 
 func statusSummary(from, to string, closedReason, paidReason *string) string {
 	labels := map[string]string{
-		"new": "New", "prepared": "Prepared", "invoiced": "Invoiced",
+		"new": "New", "preparing": "Preparing", "prepared": "Prepared", "invoiced": "Invoiced",
 		"notified": "Notified", "paid": "Paid", "closed": "Closed",
 	}
 	toLabel := labels[to]

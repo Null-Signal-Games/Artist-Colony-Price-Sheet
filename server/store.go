@@ -50,6 +50,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_invoice_url TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_paid_checked_at TIMESTAMPTZ;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_order_id TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_amount_cents INTEGER;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS preparing_by_staff_name TEXT;
 CREATE INDEX IF NOT EXISTS idx_orders_shopify_draft_order_id ON orders(shopify_draft_order_id);
 CREATE TABLE IF NOT EXISTS staff_users (
   id SERIAL PRIMARY KEY,

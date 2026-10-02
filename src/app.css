@@ -2520,8 +2520,8 @@ table tbody tr.notes-only-row.stripe-alt,
 	gap: 8px;
 	flex-shrink: 0;
 	margin: 0;
-	padding: max(8px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
-		10px max(12px, env(safe-area-inset-left, 0px));
+	padding: max(8px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 10px
+		max(12px, env(safe-area-inset-left, 0px));
 	position: relative;
 	z-index: 300;
 	background: #111111;
@@ -2638,6 +2638,10 @@ table tbody tr.notes-only-row.stripe-alt,
 
 .staff-status-filter-dot[data-status='prepared'] {
 	background: #22b8cf;
+}
+
+.staff-status-filter-dot[data-status='preparing'] {
+	background: #f59f00;
 }
 
 .staff-status-filter-dot[data-status='invoiced'] {
@@ -2762,6 +2766,11 @@ table tbody tr.notes-only-row.stripe-alt,
 .staff-status-check[data-status='prepared'] {
 	background: #e3fafc;
 	color: #0b7285;
+}
+
+.staff-status-check[data-status='preparing'] {
+	background: #fff3bf;
+	color: #5c4800;
 }
 
 .staff-status-check[data-status='invoiced'] {
@@ -3007,7 +3016,9 @@ table tbody tr.notes-only-row.stripe-alt,
 	width: 18px;
 	height: 2px;
 	background: #ffffff;
-	transition: transform 0.15s ease, top 0.15s ease;
+	transition:
+		transform 0.15s ease,
+		top 0.15s ease;
 }
 
 .staff-menu-icon::before {
@@ -3342,6 +3353,12 @@ table tbody tr.notes-only-row.stripe-alt,
 	background: #f2fcfd;
 }
 
+.staff-card:has(.staff-status[data-status='preparing']):hover,
+.staff-card:has(.staff-status[data-status='preparing']).selected {
+	border-color: #ffd43b;
+	background: #fffdf3;
+}
+
 .staff-card:has(.staff-status[data-status='invoiced']):hover,
 .staff-card:has(.staff-status[data-status='invoiced']).selected {
 	border-color: #748ffc;
@@ -3500,6 +3517,12 @@ table tbody tr.notes-only-row.stripe-alt,
 	background: #e3fafc;
 	border-color: #22b8cf;
 	color: #0b7285;
+}
+
+.staff-status[data-status='preparing'] {
+	background: #fff3bf;
+	border-color: #ffd43b;
+	color: #5c4800;
 }
 
 .staff-status[data-status='invoiced'] {
@@ -3831,8 +3854,13 @@ a.staff-shopify-order:hover {
 	cursor: pointer;
 	touch-action: manipulation;
 	text-align: left;
-	box-shadow: 0 0 8px rgba(0, 0, 0, 0.14), 0 0 18px rgba(0, 0, 0, 0.1);
-	transition: box-shadow 0.12s ease, filter 0.12s ease, transform 0.12s ease;
+	box-shadow:
+		0 0 8px rgba(0, 0, 0, 0.14),
+		0 0 18px rgba(0, 0, 0, 0.1);
+	transition:
+		box-shadow 0.12s ease,
+		filter 0.12s ease,
+		transform 0.12s ease;
 }
 
 .staff-status-trigger > span:first-child {
@@ -3854,6 +3882,12 @@ a.staff-shopify-order:hover {
 	background: #e3fafc;
 	border-color: #22b8cf;
 	color: #0b7285;
+}
+
+.staff-status-trigger[data-status='preparing'] {
+	background: #fff3bf;
+	border-color: #ffd43b;
+	color: #5c4800;
 }
 
 .staff-status-trigger[data-status='invoiced'] {

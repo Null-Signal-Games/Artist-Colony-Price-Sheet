@@ -354,6 +354,18 @@
 				error = 'Order not found.';
 				return;
 			}
+			if (selectedOrder.status === 'new') {
+				try {
+					selectedOrder = await staffApi.updateOrderStatus(
+						orderId,
+						'preparing',
+						staffMeta()
+					);
+					await refreshOrdersList();
+				} catch {
+					// someone probably claimed it, keep the fetched order as is
+				}
+			}
 			notesDraft = selectedOrder.staffNotes ?? '';
 			paidMenuOpen = false;
 			statusMenuOpen = false;
@@ -625,6 +637,7 @@
 				selectedOrder.closedReason === 'closed');
 		if (
 			selectedOrder.status !== 'new' &&
+			selectedOrder.status !== 'preparing' &&
 			selectedOrder.status !== 'prepared' &&
 			selectedOrder.status !== 'invoiced' &&
 			selectedOrder.status !== 'notified' &&
@@ -756,6 +769,13 @@
 		if (next === selectedOrder.status) return false;
 		if (selectedOrder.status === 'new') {
 			if (next === 'closed') return true;
+			if (next === 'preparing') return true;
+			if (next === 'prepared') return allLinesReadyForPrepare;
+			return false;
+		}
+		if (selectedOrder.status === 'preparing') {
+			if (next === 'closed') return true;
+			if (next === 'new') return true;
 			if (next === 'prepared') return allLinesReadyForPrepare;
 			return false;
 		}
@@ -775,6 +795,12 @@
 			return false;
 		}
 		return false;
+	}
+
+	async function releasePreparingOrder() {
+		if (!selectedOrder || selectedOrder.status !== 'preparing' || actionsLocked) return;
+		closeStatusMenu();
+		await setStatus('new');
 	}
 
 	async function editPreparedOrder() {
@@ -1666,7 +1692,7 @@
 				{:else}
 					<div class="staff-detail-head">
 						<div class="staff-detail-status">
-							{#if selectedOrder.status === 'new' || selectedOrder.status === 'prepared'}
+							{#if selectedOrder.status === 'new' || selectedOrder.status === 'preparing' || selectedOrder.status === 'prepared'}
 								<div class="staff-status-menu-wrap">
 									<button
 										type="button"
@@ -1679,7 +1705,11 @@
 										on:click={toggleStatusMenu}
 									>
 										<span
-											>{selectedOrder.status === 'new' ? 'New' : 'Prepared'}</span
+											>{selectedOrder.status === 'new'
+												? 'New'
+												: selectedOrder.status === 'preparing'
+													? `Preparing${selectedOrder.preparingBy?.trim() ? ` by ${selectedOrder.preparingBy.trim()}` : ''}`
+												: 'Prepared'}</span
 										>
 										<span class="staff-paid-caret" aria-hidden="true"></span>
 									</button>
@@ -1691,7 +1721,7 @@
 											on:click={closeStatusMenu}
 										></button>
 										<div class="staff-paid-menu" role="menu">
-											{#if selectedOrder.status === 'new'}
+											{#if selectedOrder.status === 'new' || selectedOrder.status === 'preparing'}
 												<button
 													type="button"
 													role="menuitem"
@@ -1703,6 +1733,17 @@
 												>
 													Prepared
 												</button>
+												{#if selectedOrder.status === 'preparing'}
+													<button
+														type="button"
+														role="menuitem"
+														class="staff-status-menu-back"
+														disabled={actionsLocked || sendingInvoice}
+														on:click={releasePreparingOrder}
+													>
+														Release Order
+													</button>
+												{/if}
 												<button
 													type="button"
 													role="menuitem"
@@ -2437,7 +2478,7 @@
 						{/if}
 					</div>
 
-					{#if selectedOrder.status === 'new'}
+					{#if selectedOrder.status === 'new' || selectedOrder.status === 'preparing'}
 						<div class="staff-detail-post-actions">
 							<button
 								type="button"

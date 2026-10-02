@@ -1,8 +1,10 @@
 // state machine states
-export type OrderStatus = 'new' | 'prepared' | 'invoiced' | 'notified' | 'paid' | 'closed';
+export type OrderStatus =
+	'new' | 'preparing' | 'prepared' | 'invoiced' | 'notified' | 'paid' | 'closed';
 
 export const ORDER_STATUSES: OrderStatus[] = [
 	'new',
+	'preparing',
 	'prepared',
 	'invoiced',
 	'notified',
@@ -12,6 +14,7 @@ export const ORDER_STATUSES: OrderStatus[] = [
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 	new: 'New',
+	preparing: 'Preparing',
 	prepared: 'Prepared',
 	invoiced: 'Invoiced',
 	notified: 'Notified',
@@ -27,9 +30,7 @@ export const NOTIFICATION_CHANNEL_LABELS: Record<NotificationChannel, string> = 
 	in_person: 'Notified In Person'
 };
 
-export function notificationDisplayLabel(
-	channel: NotificationChannel | null | undefined
-): string {
+export function notificationDisplayLabel(channel: NotificationChannel | null | undefined): string {
 	if (channel === 'discord') return NOTIFICATION_CHANNEL_LABELS.discord;
 	if (channel === 'email') return NOTIFICATION_CHANNEL_LABELS.email;
 	if (channel === 'in_person') return NOTIFICATION_CHANNEL_LABELS.in_person;
@@ -53,7 +54,12 @@ export const CLOSED_REASON_LABELS: Record<ClosedReason, string> = {
 export function orderDisplayLabel(order: {
 	status: OrderStatus;
 	closedReason?: ClosedReason | null | string;
+	preparingBy?: string | null;
 }): string {
+	if (order.status === 'preparing') {
+		const name = (order.preparingBy ?? '').trim();
+		return name ? `Preparing by ${name}` : 'Preparing';
+	}
 	if (order.status === 'closed' && order.closedReason) {
 		return (
 			CLOSED_REASON_LABELS[order.closedReason as ClosedReason] ??
@@ -141,6 +147,7 @@ export type Order = {
 	staffNotes: string;
 	items: OrderItem[];
 	submittedByStaffName?: string | null;
+	preparingBy?: string | null;
 	merchTableOrder?: boolean;
 	notificationChannel?: NotificationChannel | null;
 	shopifyInvoiceId?: string | null;

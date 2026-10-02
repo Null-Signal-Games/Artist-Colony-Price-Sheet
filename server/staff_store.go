@@ -140,6 +140,7 @@ type orderRow struct {
 	ShopifyInvoiceURL    sql.NullString
 	ShopifyOrderID       sql.NullString
 	PaidAmountCents      sql.NullInt64
+	PreparingByStaffName sql.NullString
 }
 
 const orderColumns = `
@@ -149,7 +150,8 @@ const orderColumns = `
 	o.shopify_invoice_id, o.shopify_draft_order_id, o.shopify_invoice_url, o.shopify_order_id,
 	o.paid_reason, o.paid_reason_other,
 	o.paid_amount_cents,
-	o.closed_reason, o.closed_reason_other`
+	o.closed_reason, o.closed_reason_other,
+	o.preparing_by_staff_name`
 
 func scanOrderRow(scan func(...any) error) (*orderRow, error) {
 	var o orderRow
@@ -159,7 +161,8 @@ func scanOrderRow(scan func(...any) error) (*orderRow, error) {
 		&o.ShopifyInvoiceID, &o.ShopifyDraftOrderID, &o.ShopifyInvoiceURL, &o.ShopifyOrderID,
 		&o.PaidReason, &o.PaidReasonOther,
 		&o.PaidAmountCents,
-		&o.ClosedReason, &o.ClosedReasonOther)
+		&o.ClosedReason, &o.ClosedReasonOther,
+		&o.PreparingByStaffName)
 	if err != nil {
 		return nil, err
 	}

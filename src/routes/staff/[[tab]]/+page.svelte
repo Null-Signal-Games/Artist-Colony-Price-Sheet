@@ -2,7 +2,7 @@
 	import { goto, replaceState, afterNavigate } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
-	import { onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { get } from 'svelte/store';
 	import { env } from '$env/dynamic/public';
 
@@ -80,6 +80,11 @@
 	let selectedOrderId = '';
 	let selectedOrder: Order | null = null;
 	let notesDraft = '';
+	let notesSavedValue = '';
+	let notesSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let notesSaveInFlight: Promise<boolean> | null = null;
+
+	const NOTES_AUTOSAVE_MS = 7000; // less aggressive sync
 
 	let paidMenuOpen = false;
 	let statusMenuOpen = false;
@@ -233,9 +238,9 @@
 			persistFilters();
 			// keeps the active order detail open even if filters no longer include it in the list
 			if (selectedOrderId) {
-				await flushNotesIfNeeded({ quiet: true });
-				selectedOrder = await staffApi.getOrder(selectedOrderId);
-				notesDraft = selectedOrder?.staffNotes ?? '';
+				const refreshed = await staffApi.getOrder(selectedOrderId);
+				selectedOrder = refreshed;
+				adoptServerNotes(refreshed);
 				if (!selectedOrder) {
 					await clearSelectedOrder({ skipFlush: true });
 				}
@@ -302,29 +307,77 @@
 		}
 	}
 
+	function notesDirty() {
+		return notesDraft !== notesSavedValue;
+	}
+
+	function cancelNotesAutosave() {
+		if (notesSaveTimer) {
+			clearTimeout(notesSaveTimer);
+			notesSaveTimer = null;
+		}
+	}
+
+	// don't erase text while staff user is still typing
+	function adoptServerNotes(order: Order | null) {
+		if (!order) {
+			if (!notesDirty()) notesDraft = '';
+			notesSavedValue = '';
+			return;
+		}
+		const serverNotes = order.staffNotes ?? '';
+		if (notesDirty() || notesSaveInFlight) return;
+		notesDraft = serverNotes;
+		notesSavedValue = serverNotes;
+	}
+
+	function onNotesInput() {
+		cancelNotesAutosave();
+		if (!notesDirty()) return;
+		notesSaveTimer = setTimeout(() => {
+			notesSaveTimer = null;
+			void flushNotesIfNeeded({ quiet: true });
+		}, NOTES_AUTOSAVE_MS);
+	}
+
 	async function flushNotesIfNeeded(options: { quiet?: boolean } = {}) {
+		cancelNotesAutosave();
+		if (notesSaveInFlight) await notesSaveInFlight;
 		if (!selectedOrder) return true;
-		const saved = selectedOrder.staffNotes ?? '';
-		if (notesDraft === saved) return true;
+		if (!notesDirty()) return true;
 		const orderId = selectedOrder.orderId;
 		const notes = notesDraft;
 		if (!options.quiet) saving = true;
 		error = '';
-		try {
-			const updated = await staffApi.updateOrderNotes(orderId, notes, staffMeta());
-			if (selectedOrder?.orderId === orderId) {
-				selectedOrder = updated;
-				notesDraft = updated.staffNotes ?? notes;
+		const save = (async () => {
+			try {
+				const updated = await staffApi.updateOrderNotes(orderId, notes, staffMeta());
+				if (selectedOrder?.orderId === orderId) {
+					selectedOrder = updated;
+					notesSavedValue = notes; // debounce save while user is still typing
+				}
+				await refreshOrdersList();
+				return true;
+			} catch (err) {
+				error = err instanceof Error ? err.message : 'Failed to save notes.';
+				return false;
+			} finally {
+				if (!options.quiet) saving = false;
 			}
-			await refreshOrdersList();
-			return true;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save notes.';
-			return false;
+		})();
+		notesSaveInFlight = save;
+		try {
+			return await save;
 		} finally {
-			if (!options.quiet) saving = false;
+			if (notesSaveInFlight === save) notesSaveInFlight = null;
+			// save anything newly added
+			if (notesDirty()) onNotesInput();
 		}
 	}
+
+	// function flushNotes_debug() {
+	// 	console.log('notes flush', { notesDraft, notesSavedValue, dirty: notesDirty() });
+	// }
 
 	async function selectOrder(orderId: string) {
 		if (selectedOrderId && selectedOrderId !== orderId) {
@@ -367,6 +420,7 @@
 				}
 			}
 			notesDraft = selectedOrder.staffNotes ?? '';
+			notesSavedValue = notesDraft;
 			paidMenuOpen = false;
 			statusMenuOpen = false;
 		} catch (err) {
@@ -382,7 +436,9 @@
 		}
 		selectedOrderId = '';
 		selectedOrder = null;
+		cancelNotesAutosave();
 		notesDraft = '';
+		notesSavedValue = '';
 		paidMenuOpen = false;
 		statusMenuOpen = false;
 		prepareConfirmOpen = false;
@@ -452,7 +508,7 @@
 					const refreshed = await staffApi.getOrder(orderId);
 					if (refreshed) {
 						selectedOrder = refreshed;
-						notesDraft = refreshed.staffNotes ?? notesDraft;
+						adoptServerNotes(refreshed);
 						await refreshOrdersList();
 					}
 					if (selectedOrder?.status === 'paid') {
@@ -595,7 +651,7 @@
 			const refreshed = await staffApi.getOrder(selectedOrderId);
 			if (refreshed) {
 				selectedOrder = refreshed;
-				notesDraft = refreshed.staffNotes ?? '';
+				adoptServerNotes(refreshed);
 			}
 			await refreshOrdersList();
 			if (selectedOrder?.status === 'paid') {
@@ -1170,6 +1226,11 @@
 		}
 	});
 
+	onDestroy(() => {
+		cancelNotesAutosave();
+		void flushNotesIfNeeded({ quiet: true });
+	});
+
 	async function handleLogin(event: SubmitEvent) {
 		event.preventDefault();
 		if (loginBusy) return;
@@ -1341,6 +1402,9 @@
 </svelte:head>
 
 <svelte:window
+	on:pagehide={() => {
+		void flushNotesIfNeeded({ quiet: true });
+	}}
 	on:keydown={(event) => {
 		if (event.key === 'Escape') {
 			closeMenu();
@@ -2502,6 +2566,7 @@
 							rows="3"
 							bind:value={notesDraft}
 							disabled={actionsLocked}
+							on:input={onNotesInput}
 							on:blur={() => flushNotesIfNeeded({ quiet: true })}
 						></textarea>
 					</label>

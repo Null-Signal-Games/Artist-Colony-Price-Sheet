@@ -49,6 +49,36 @@
 		return (row[productDisplayKey] ?? '').trim().toLowerCase() === 'merch table';
 	}
 
+	// === staff only: custom charge order ===
+	// useful for discounts and to fix orders
+	const CUSTOM_PURCHASE_CODE = 'CUSTOM';
+	const customPurchaseRow: { [key: string]: string } = {
+		[shopColumnKey]: 'Staff Only',
+		[artistColumnKey]: '',
+		[productCodeKey]: CUSTOM_PURCHASE_CODE,
+		[productTitleKey]: 'Custom Purchase',
+		[productTypeKey]: 'Add one for each dollar amount',
+		[productDisplayKey]: 'Merch Table',
+		Quantity: '',
+		[priceKey]: '1.00',
+		Notes: ''
+	};
+
+	function isCustomPurchaseRow(row: { [key: string]: string }) {
+		return row === customPurchaseRow;
+	}
+
+	$: showCustomPurchase = (() => {
+		if (!staffSession) return false;
+		if (selectedShop && selectedShop !== MERCH_TABLE_FILTER) return false;
+		const term = searchTerm.trim().toLowerCase();
+		if (!term) return true;
+		if (isMerchTableQuery(term)) return true;
+		return 'custom purchase'.includes(term) || CUSTOM_PURCHASE_CODE.toLowerCase().includes(term);
+	})();
+
+	// === end staff only ===
+
 	function isMerchTableQuery(q: string) {
 		const normalized = q.toLowerCase().trim();
 		if (!normalized) return false;
@@ -145,7 +175,12 @@
 		return groups;
 	})();
 
-	$: if (browser && artistGroups) {
+	// append to the end of the list
+	$: displayGroups = showCustomPurchase
+		? [...artistGroups, { artist: 'Staff Only', details: [], rows: [customPurchaseRow] }]
+		: artistGroups;
+
+	$: if (browser && displayGroups) {
 		void tick().then(updateArtistStickyState);
 	}
 
@@ -345,7 +380,7 @@
 		{/if}
 	</div>
 
-	{#if filteredData && filteredData.length > 0}
+	{#if displayGroups && displayGroups.length > 0}
 		<!-- Fixed header row -->
 		<div class="fixed-header">
 			<div class="header-cell artist-col">Artist Name</div>
@@ -376,7 +411,7 @@
 					<th class="cart-col"></th>
 				</tr>
 			</thead>
-			{#each artistGroups as group}
+			{#each displayGroups as group}
 				<tbody>
 					<tr class="artist-divider">
 						<td colspan="6">
@@ -393,6 +428,8 @@
 							<td class="font-bold">
 								{#if isNotesOnlyItem(row)}
 									<!-- skip, this line is for notes, no product code -->
+								{:else if isCustomPurchaseRow(row)}
+									<div class="merch-table-code">{row[productCodeKey]}</div>
 								{:else if isMerchTableItem(row)}
 									{#if staffSession && (row[productCodeKey] ?? '').trim()}
 										<div class="merch-table-code">{row[productCodeKey]}</div>
@@ -467,7 +504,7 @@
 
 		<!-- mobile layout -->
 		<div class="mobile-items">
-			{#each artistGroups as group}
+			{#each displayGroups as group}
 				<section class="mobile-artist-group">
 					<div class="mobile-artist-divider">
 						<ArtistGroupHeading artist={group.artist} details={group.details} />
@@ -490,7 +527,9 @@
 								</div>
 							{:else}
 								<div class="mobile-left">
-									{#if isMerchTableItem(row)}
+									{#if isCustomPurchaseRow(row)}
+										<div class="mobile-product-code merch-table-code">{row[productCodeKey]}</div>
+									{:else if isMerchTableItem(row)}
 										{#if staffSession && (row[productCodeKey] ?? '').trim()}
 											<div class="mobile-product-code merch-table-code">{row[productCodeKey]}</div>
 										{/if}

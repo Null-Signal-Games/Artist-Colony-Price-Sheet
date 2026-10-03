@@ -1169,6 +1169,39 @@
 		return { effective, adjusted, original: item.quantity };
 	}
 
+	// sort product codes alphabetically
+	function compareProductCodes(a: string, b: string) {
+		const left = a.trim().toUpperCase();
+		const right = b.trim().toUpperCase();
+		if (!left || !right) {
+			if (left === right) return 0;
+			return left ? -1 : 1;
+		}
+		const chunks = (code: string) => code.match(/\d+|\D+/g) ?? [];
+		const leftChunks = chunks(left);
+		const rightChunks = chunks(right);
+		for (let i = 0; i < Math.min(leftChunks.length, rightChunks.length); i += 1) {
+			const l = leftChunks[i];
+			const r = rightChunks[i];
+			if (/^\d+$/.test(l) && /^\d+$/.test(r)) {
+				if (Number(l) !== Number(r)) return Number(l) - Number(r);
+				continue;
+			}
+			if (l !== r) return l < r ? -1 : 1;
+		}
+		return leftChunks.length - rightChunks.length;
+	}
+
+	// preparing an order renders alphabetically by product code
+	$: orderLines = (selectedOrder?.items ?? [])
+		.map((item, lineIndex) => ({ item, lineIndex }))
+		.sort(
+			(a, b) =>
+				compareProductCodes(a.item.productCode, b.item.productCode) ||
+				a.item.title.localeCompare(b.item.title) ||
+				a.lineIndex - b.lineIndex
+		);
+
 	async function refresh() {
 		if (tab === 'orders') await loadOrders();
 		else await loadInventory();
@@ -2334,7 +2367,7 @@
 							aria-label="Order items"
 						>
 							<ul class="staff-line-list">
-								{#each selectedOrder.items as item, lineIndex}
+								{#each orderLines as { item, lineIndex } (lineIndex)}
 									{@const qty = qtyDisplay(item)}
 									{@const lineCheckable =
 										lineItemsEditable && item.lineAction !== 'sold_out' && !actionsLocked}

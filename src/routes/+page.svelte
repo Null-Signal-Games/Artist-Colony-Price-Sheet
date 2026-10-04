@@ -87,10 +87,6 @@
 		return /^merch[\s_-]*table(\s+(order|orders|item|items))?$/i.test(normalized);
 	}
 
-	function isArtistDisplayItem(row: { [key: string]: string }) {
-		return (row[productDisplayKey] ?? '').trim().toLowerCase() === 'artist display';
-	}
-
 	function isTitleSoldOut(row: { [key: string]: string }) {
 		return /sold out/i.test(row[productTitleKey] ?? '');
 	}
@@ -110,9 +106,12 @@
 	}
 
 	function canAddToCart(row: { [key: string]: string }) {
-    if (isNotesOnlyItem(row) || isSoldOutItem(row)) return false;
-		if (isArtistDisplayItem(row)) return true;
-		return staffSession && isMerchTableItem(row);
+		if (isNotesOnlyItem(row) || isSoldOutItem(row)) return false;
+		// merch table stock is in person only
+    //   everything can be purchased online
+		// @TODO support arbitrary types (like "Other")
+		if (isMerchTableItem(row)) return staffSession;
+		return true;
 	}
 
 	function shopName(row: { [key: string]: string }) {
@@ -479,7 +478,7 @@
 												><span class="buy-merch-line">Table</span></em
 											>
 										{/if}
-									{:else if isArtistDisplayItem(row)}
+									{:else if canAddToCart(row)}
 										<button
 											type="button"
 											class="add-to-cart-button"
@@ -573,7 +572,7 @@
 												><span class="buy-merch-line">Table</span></em
 											>
 										{/if}
-									{:else if isArtistDisplayItem(row)}
+									{:else if canAddToCart(row)}
 										<button
 											type="button"
 											class="add-to-cart-button"
